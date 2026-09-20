@@ -8,26 +8,121 @@ import ChatExtras from "@/components/ChatExtras";
 
 const EASE = [0.22, 1, 0.36, 1];
 
-const BOTS = {
-  brand: { name: "Brand Bot", icon: Palette, grad: "from-sky-400 to-blue-600" },
-  customer: { name: "Customer Insight", icon: Users, grad: "from-cyan-400 to-teal-600" },
-  marketing: { name: "Ad Marketing", icon: Megaphone, grad: "from-blue-400 to-indigo-500" },
-  finance: { name: "Financial Bot", icon: Wallet, grad: "from-teal-400 to-emerald-600" },
-  developer: { name: "Developer Bot", icon: Code2, grad: "from-sky-500 to-slate-700" },
-  video: { name: "Ad Video Bot", icon: Clapperboard, grad: "from-indigo-400 to-sky-700" },
+const ROBOTS = {
+  brand: { name: "Brand Bot", c1: "#38BDF8", c2: "#2563EB", antenna: "ball", eyes: "round" },
+  customer: { name: "Customer Insight", c1: "#22D3EE", c2: "#0F766E", antenna: "ring", eyes: "visor" },
+  marketing: { name: "Ad Marketing", c1: "#818CF8", c2: "#4F46E5", antenna: "star", eyes: "wink" },
+  finance: { name: "Financial Bot", c1: "#34D399", c2: "#047857", antenna: "coin", eyes: "square" },
+  developer: { name: "Developer Bot", c1: "#0EA5E9", c2: "#1E293B", antenna: "bolt", eyes: "glasses" },
+  video: { name: "Ad Video Bot", c1: "#A78BFA", c2: "#0369A1", antenna: "play", eyes: "visor" },
+};
+
+const AntennaTip = ({ type, c2 }) => {
+  switch (type) {
+    case "ball":
+      return <><circle cx="32" cy="7.5" r="4" fill={c2} /><circle cx="30.6" cy="6.2" r="1.2" fill="#fff" opacity="0.85" /></>;
+    case "ring":
+      return <circle cx="32" cy="7.5" r="3.8" fill="none" stroke={c2} strokeWidth="2.4" />;
+    case "star":
+      return <polygon points="32,3 33.4,6.6 37.2,6.9 34.4,9.4 35.3,13.1 32,11 28.7,13.1 29.6,9.4 26.8,6.9 30.6,6.6" fill="#FBBF24" stroke={c2} strokeWidth="0.6" />;
+    case "coin":
+      return <><circle cx="32" cy="7.5" r="4.4" fill="#FDE68A" stroke={c2} strokeWidth="1.6" /><circle cx="32" cy="7.5" r="2.1" fill="none" stroke={c2} strokeWidth="1.1" /></>;
+    case "bolt":
+      return <polygon points="33.5,2.5 28.5,9.5 31.8,9.5 30.5,14.5 35.5,7.3 32.2,7.3" fill="#FACC15" stroke={c2} strokeWidth="0.5" />;
+    case "play":
+      return <polygon points="29.5,4.5 29.5,11.5 36,8" fill={c2} />;
+    default:
+      return null;
+  }
+};
+
+const RobotEyes = ({ type, c2 }) => {
+  switch (type) {
+    case "visor":
+      return (
+        <g className="robot-blink">
+          <rect x="21" y="29.5" width="22" height="6.5" rx="3.25" fill={c2} />
+          <rect x="24" y="31.3" width="4.5" height="1.6" rx="0.8" fill="#fff" opacity="0.8" />
+        </g>
+      );
+    case "wink":
+      return (
+        <g className="robot-blink">
+          <circle cx="26" cy="32.5" r="3.2" fill={c2} />
+          <circle cx="24.9" cy="31.4" r="1.1" fill="#fff" />
+          <line x1="35" y1="32.5" x2="41" y2="32.5" stroke={c2} strokeWidth="2.6" strokeLinecap="round" />
+        </g>
+      );
+    case "square":
+      return (
+        <g className="robot-blink">
+          <rect x="23" y="29.5" width="6" height="6" rx="1.6" fill={c2} />
+          <rect x="35" y="29.5" width="6" height="6" rx="1.6" fill={c2} />
+          <rect x="24.2" y="30.7" width="1.6" height="1.6" rx="0.5" fill="#fff" />
+          <rect x="36.2" y="30.7" width="1.6" height="1.6" rx="0.5" fill="#fff" />
+        </g>
+      );
+    case "glasses":
+      return (
+        <g className="robot-blink">
+          <circle cx="26" cy="32.5" r="4.4" fill="#fff" stroke={c2} strokeWidth="1.8" />
+          <circle cx="38" cy="32.5" r="4.4" fill="#fff" stroke={c2} strokeWidth="1.8" />
+          <line x1="30.4" y1="32.5" x2="33.6" y2="32.5" stroke={c2} strokeWidth="1.8" />
+          <circle cx="26" cy="32.5" r="1.6" fill={c2} />
+          <circle cx="38" cy="32.5" r="1.6" fill={c2} />
+        </g>
+      );
+    default:
+      return (
+        <g className="robot-blink">
+          <circle cx="26" cy="32.5" r="3.2" fill={c2} />
+          <circle cx="38" cy="32.5" r="3.2" fill={c2} />
+          <circle cx="24.9" cy="31.4" r="1.1" fill="#fff" />
+          <circle cx="36.9" cy="31.4" r="1.1" fill="#fff" />
+        </g>
+      );
+  }
 };
 
 const BotAvatar = ({ bot, size = 8 }) => {
-  const meta = BOTS[bot] || BOTS.developer;
+  const r = ROBOTS[bot] || ROBOTS.developer;
+  const px = size * 4;
+  const gid = `rg-${bot}`;
   return (
     <motion.span
-      initial={{ scale: 0, rotate: -20 }}
-      animate={{ scale: 1, rotate: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 18 }}
-      className={`flex h-${size} w-${size} shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${meta.grad} text-white shadow-[0_8px_16px_-4px_rgba(14,165,233,0.4),inset_0_2px_2px_rgba(255,255,255,0.45)]`}
-      style={{ height: size * 4, width: size * 4 }}
+      initial={{ scale: 0, rotate: -14, y: 8 }}
+      animate={{ scale: 1, rotate: 0, y: 0 }}
+      transition={{ type: "spring", stiffness: 300, damping: 17 }}
+      className="relative inline-flex shrink-0"
+      style={{ width: px, height: px }}
+      title={r.name}
     >
-      <meta.icon size={size * 1.7} strokeWidth={2.2} />
+      <motion.svg
+        animate={{ y: [0, -2.5, 0] }}
+        transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut" }}
+        viewBox="0 0 64 64"
+        width={px}
+        height={px}
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor={r.c1} />
+            <stop offset="100%" stopColor={r.c2} />
+          </linearGradient>
+        </defs>
+        <line x1="32" y1="18" x2="32" y2="10" stroke={r.c2} strokeWidth="3" strokeLinecap="round" />
+        <AntennaTip type={r.antenna} c2={r.c2} />
+        <circle cx="10.5" cy="35" r="4.2" fill={r.c2} opacity="0.9" />
+        <circle cx="53.5" cy="35" r="4.2" fill={r.c2} opacity="0.9" />
+        <circle cx="10.5" cy="35" r="1.6" fill="#fff" opacity="0.55" />
+        <circle cx="53.5" cy="35" r="1.6" fill="#fff" opacity="0.55" />
+        <rect x="12" y="17" width="40" height="37" rx="13" fill={`url(#${gid})`} stroke="rgba(255,255,255,0.9)" strokeWidth="2" />
+        <rect x="17" y="20.5" width="20" height="3" rx="1.5" fill="#fff" opacity="0.35" />
+        <rect x="17" y="24" width="30" height="23" rx="9.5" fill="rgba(255,255,255,0.94)" />
+        <RobotEyes type={r.eyes} c2={r.c2} />
+        <path d="M27 40.5 Q32 44.5 37 40.5" stroke={r.c2} strokeWidth="2.4" fill="none" strokeLinecap="round" />
+      </motion.svg>
     </motion.span>
   );
 };
@@ -367,7 +462,7 @@ const AgentPanel = ({
             return <VideoCard key={i} data={m.data} />;
           }
           if (m.role === "bot") {
-            const meta = BOTS[m.bot] || BOTS.developer;
+            const meta = ROBOTS[m.bot] || ROBOTS.developer;
             return (
               <motion.div
                 key={i}
