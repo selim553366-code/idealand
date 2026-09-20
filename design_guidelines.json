@@ -1,0 +1,161 @@
+{
+  "project_name": "idealand.ai",
+  "archetype": "Fresh Sky Glassmorphism & Skeuominimalism",
+  "theme_mode": "light",
+  "typography": {
+    "heading_font": "Cabinet Grotesk, Plus Jakarta Sans, sans-serif",
+    "body_font": "Outfit, DM Sans, sans-serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "font_family_imports": [
+      "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+      "https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&display=swap"
+    ],
+    "text_scale": {
+      "h1_hero": "text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.08]",
+      "h2_section": "text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight leading-tight",
+      "h3_card": "text-lg sm:text-xl font-semibold tracking-normal",
+      "body": "text-base sm:text-lg leading-relaxed text-slate-700 font-normal",
+      "small_label": "text-xs sm:text-sm font-medium uppercase tracking-[0.15em] text-sky-800/80",
+      "prompt_mono": "font-mono text-sm sm:text-base text-slate-800 font-medium"
+    }
+  },
+  "colors": {
+    "palette": {
+      "background_gradient": "bg-gradient-to-br from-[#E0F2FE] via-[#F0F9FF] to-[#E0F7FA]",
+      "sky_accent": "#0284C7",
+      "azure_vibrant": "#0EA5E9",
+      "cyan_glow": "#06B6D4",
+      "ice_white": "rgba(255, 255, 255, 0.75)",
+      "deep_navy_text": "#0F172A",
+      "muted_text": "#475569",
+      "skeuo_highlight": "rgba(255, 255, 255, 0.9)",
+      "skeuo_shadow": "rgba(14, 165, 233, 0.18)",
+      "border_glass": "rgba(255, 255, 255, 0.65)"
+    },
+    "css_variables": {
+      "--bg-sky-light": "#F0F9FF",
+      "--accent-azure": "#0EA5E9",
+      "--accent-cyan": "#06B6D4",
+      "--text-main": "#0F172A",
+      "--text-muted": "#475569",
+      "--glass-bg": "rgba(255, 255, 255, 0.70)",
+      "--glass-border": "rgba(255, 255, 255, 0.8)",
+      "--skeuo-inner-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -3px 8px rgba(14, 165, 233, 0.15)",
+      "--skeuo-drop-shadow": "0 10px 30px -5px rgba(14, 165, 233, 0.25), 0 4px 12px rgba(0, 0, 0, 0.05)"
+    }
+  },
+  "visual_enhancers": {
+    "skeuomorphic_button_style": "relative inline-flex items-center justify-center font-semibold rounded-2xl px-6 py-3.5 transition-all duration-300 ease-out bg-gradient-to-b from-white via-[#E0F2FE] to-[#BAE6FD] text-sky-950 shadow-[0_10px_25px_-5px_rgba(14,165,233,0.3),inset_0_2px_1px_rgba(255,255,255,1),inset_0_-2px_4px_rgba(2,132,199,0.2)] border border-white/80 hover:scale-[1.02] active:scale-[0.98] active:shadow-[inset_0_3px_6px_rgba(2,132,199,0.3)] hover:brightness-105",
+    "glass_card_style": "backdrop-blur-xl bg-white/70 border border-white/80 rounded-3xl shadow-[0_20px_50px_rgba(14,165,233,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] transition-all duration-300 hover:shadow-[0_30px_60px_rgba(14,165,233,0.2),inset_0_1px_1px_rgba(255,255,255,1)] hover:-translate-y-1",
+    "hero_chat_bar_style": "w-full max-w-3xl backdrop-blur-2xl bg-white/80 rounded-2xl p-3 sm:p-4 border border-white shadow-[0_25px_60px_-15px_rgba(14,165,233,0.25),inset_0_2px_4px_rgba(255,255,255,0.9)] focus-within:ring-2 focus-within:ring-sky-400 focus-within:shadow-[0_25px_60px_-10px_rgba(14,165,233,0.35)] transition-all duration-300"
+  },
+  "layout_and_sections": {
+    "header": {
+      "type": "Floating Glass Navigation Bar",
+      "style": "sticky top-4 z-50 mx-auto max-w-6xl px-6 py-3.5 rounded-2xl backdrop-blur-xl bg-white/60 border border-white/80 shadow-[0_10px_30px_rgba(14,165,233,0.1)] flex items-center justify-between",
+      "logo": "idealand.ai (with vibrant sky gradient icon + skeuomorphic badge)",
+      "links": ["Features", "How it Works", "Showcase", "Waitlist"],
+      "cta": "Get Early Access"
+    },
+    "hero": {
+      "headline": "Turn Any Idea into a Live Website or App in Seconds",
+      "subheadline": "The world's most intuitive AI product creator. Describe your concept in natural language and watch idealand.ai craft responsive layouts, copy, and full app logic automatically.",
+      "chat_bar_component": "Interactive Prompt Chat Bar (Visual Demo with preset prompts, active typing effect, prompt chips like 'SaaS Landing Page', 'E-commerce Store', 'Portfolio App')",
+      "cta_flow": "Pressing 'Generate' or clicking prompt chip opens the Early Access / Waitlist Email Form modal with immediate MongoDB registration"
+    },
+    "marquee": {
+      "type": "Slow Editorial Ribbon",
+      "items": [
+        "✦ AI-POWERED WEB BUILDER",
+        "✦ ZERO-CODE APP GENERATOR",
+        "✦ SKEUOMINIMAL UI TEMPLATES",
+        "✦ ONE-CLICK DEPLOYMENT",
+        "✦ NATURAL LANGUAGE TO REACT",
+        "✦ TAILWIND & SHADCN READY"
+      ],
+      "style": "bg-sky-50/50 backdrop-blur-md border-y border-sky-100/80 py-4 text-sky-900 font-semibold tracking-wider text-sm sm:text-base"
+    },
+    "feature_row": {
+      "type": "Compact 3-Card Bento Grid",
+      "cards": [
+        {
+          "title": "Instant AI Canvas",
+          "description": "Transform plain text prompts into beautiful, production-ready React layouts with realistic glassmorphism and skeuomorphic details.",
+          "badge": "Prompt-to-Code"
+        },
+        {
+          "title": "Smart Component Engine",
+          "description": "Auto-generates clean, accessible UI components with full state logic, responsive grids, and tailored themes.",
+          "badge": "Full Stack"
+        },
+        {
+          "title": "One-Click Instant Launch",
+          "description": "Deploy directly to high-performance edge infrastructure with custom domain routing and automatic SSL.",
+          "badge": "Instant Deploy"
+        }
+      ]
+    },
+    "waitlist_modal": {
+      "type": "Interactive Waitlist Form",
+      "backend_endpoint": "/api/waitlist",
+      "method": "POST",
+      "fields": ["email", "use_case"],
+      "confirmation_state": "Animated glass card showing queue number and referral link"
+    },
+    "footer": {
+      "type": "Minimalist Glass Footer",
+      "style": "py-12 border-t border-sky-100/80 bg-white/40 backdrop-blur-lg mt-20 text-center sm:text-left",
+      "content": "© 2026 idealand.ai — Crafted with vibrant gradient glassmorphic precision. All rights reserved."
+    }
+  },
+  "motion_and_interactions": {
+    "lenis_smooth_scroll": true,
+    "hero_masked_reveal": "staggered line-by-line opacity and y-axis slide using framer-motion",
+    "orbs_parallax": "floating glass gradient sphere background with gentle spring animation",
+    "prompt_chips_click": "populates chat bar and triggers glow outline",
+    "button_press_state": "tactile inward compression shadow + light specular flash"
+  },
+  "image_urls": [
+    {
+      "category": "Hero Background Glass Orbs",
+      "url": "https://images.unsplash.com/photo-1694365899936-850bc6c2b0f6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMHNreSUyMGJsdWUlMjBncmFkaWVudCUyMDNkJTIwZ2xhc3MlMjBzaGFwZXMlMjBmbG9hdGluZyUyMFVJJTIwbW9ja3VwfGVufDB8fHx8MTc4OTg4NzAzMnww&ixlib=rb-4.1.0&q=85",
+      "description": "Vibrant blue cyan 3D glass float shapes"
+    },
+    {
+      "category": "Floating Glass Visual",
+      "url": "https://images.pexels.com/photos/11458867/pexels-photo-11458867.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Curving glass shapes on sky blue backdrop"
+    }
+  ],
+  "testing_guidelines": {
+    "data_testid_requirements": [
+      "data-testid='navbar'",
+      "data-testid='navbar-brand-logo'",
+      "data-testid='navbar-waitlist-button'",
+      "data-testid='hero-heading'",
+      "data-testid='hero-chat-bar-input'",
+      "data-testid='hero-chat-bar-submit'",
+      "data-testid='prompt-chip-saas'",
+      "data-testid='prompt-chip-ecommerce'",
+      "data-testid='prompt-chip-portfolio'",
+      "data-testid='waitlist-modal'",
+      "data-testid='waitlist-email-input'",
+      "data-testid='waitlist-submit-button'",
+      "data-testid='waitlist-success-message'",
+      "data-testid='features-section'",
+      "data-testid='feature-card-canvas'",
+      "data-testid='feature-card-engine'",
+      "data-testid='feature-card-deploy'",
+      "data-testid='footer'"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Follow this guideline strictly to build the idealand.ai landing page in React JS (frontend/src/App.js & components).",
+    "Maintain the airy, vibrant Sky Blue / Azure glassmorphism theme with tactile skeuominimalist buttons.",
+    "Do NOT turn the page into dark mode; keep the light sky-gradient aesthetic.",
+    "Ensure the hero chat bar has interactive prompt chips that pre-fill the input and lead to the waitlist email modal.",
+    "Implement the waitlist email capture connected to the MongoDB backend (/api/waitlist).",
+    "Add Lenis for smooth scrolling and Framer Motion for line-by-line hero entrance and card hover effects.",
+    "Include all required data-testid attributes on interactive elements."
+  ]
+}
