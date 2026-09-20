@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Store, Layout, User } from "lucide-react";
+import ChatExtras from "@/components/ChatExtras";
 
 const PHRASES = [
   "A landing page for my coffee brand…",
@@ -16,6 +17,8 @@ const CHIPS = [
 
 const ChatBar = ({ onGenerate }) => {
   const [value, setValue] = useState("");
+  const [files, setFiles] = useState([]);
+  const [projectType, setProjectType] = useState("website");
   const [placeholder, setPlaceholder] = useState("");
   const [glow, setGlow] = useState(false);
   const inputRef = useRef(null);
@@ -58,17 +61,24 @@ const ChatBar = ({ onGenerate }) => {
 
   const submit = (e) => {
     e.preventDefault();
-    onGenerate(value.trim() || placeholder.replace(/…$/, ""));
+    onGenerate(value.trim() || placeholder.replace(/…$/, ""), { files, projectType });
   };
 
   return (
     <div className="w-full">
       <form
         onSubmit={submit}
-        className={`chat-bar flex items-center gap-3 p-3 sm:p-4 ${glow ? "chat-bar-glow" : ""}`}
+        className={`chat-bar flex flex-wrap items-center gap-2.5 p-3 sm:p-4 ${glow ? "chat-bar-glow" : ""}`}
         data-testid="hero-chat-bar"
       >
-        <div className="relative min-w-0 flex-1 pl-1">
+        <ChatExtras
+          files={files}
+          onAddFiles={(fs) => setFiles((prev) => [...prev, ...fs].slice(0, 4))}
+          onRemoveFile={(i) => setFiles((prev) => prev.filter((_, x) => x !== i))}
+          projectType={projectType}
+          onTypeChange={setProjectType}
+        />
+        <div className="relative min-w-[140px] flex-1">
           <input
             ref={inputRef}
             data-testid="hero-chat-bar-input"

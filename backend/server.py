@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import asyncio
+import base64
 import ipaddress
 import json
 import logging
@@ -563,6 +564,12 @@ class GenerateIn(BaseModel):
     prompt: str
     gen_id: Optional[str] = None
     context: Optional[str] = None
+    project_type: Optional[str] = None
+    upload_ids: Optional[list] = None
+
+
+class RevertIn(BaseModel):
+    version: int
 
 
 def sse(payload: dict) -> str:
@@ -586,15 +593,84 @@ def parse_generation(raw: str):
     return title, text
 
 
-@api_router.post("/agent/questions")
-async def agent_questions(input: GenerateIn, user: dict = Depends(get_current_user)):
+DISCUSS_SYSTEM = (
+    "You are the orchestrator of idealand.ai's expert bot team. Given a product idea, write a short team "
+    "discussion (4-6 messages) between these bots: brand (Brand Bot: naming, look and feel), customer "
+    "(Customer Insight Bot: what the target audience needs), marketing (Ad Marketing Bot: 1-2 concrete ad "
+    "angles), finance (Financial Bot: one pricing or budget note), developer (Developer Bot: technical "
+    "approach). They talk TO each other, referencing each other's points, max 25 words per message, in "
+    "English. If a video ad makes sense, marketing proposes it and video (Ad Video Bot) replies that it "
+    "will wait for the user's approval before creating anything. Output ONLY JSON, no markdown: "
+    '{"messages":[{"bot":"brand|customer|marketing|finance|developer|video","text":"..."}],'
+    '"summary":"1-2 sentence build plan","video_proposed":true}'
+)
+
+VIDEO_SYSTEM = (
+    "You are idealand.ai's Ad Video Generator Bot. Given a product and plan, create a punchy 15-second "
+    "video ad storyboard. Output ONLY JSON, no markdown: "
+    '{"title":"ad title","scenes":[{"seconds":"0-3","visual":"what we see","line":"voiceover or caption"}'
+    ' (4-5 scenes)],"cta":"closing call to action"}'
+)
+
+
+@api_router.post("/agent/discuss")
+async def agent_discuss(input: GenerateIn, user: dict = Depends(get_current_user)):
     prompt = input.prompt.strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Describe your idea first")
+
+    async def events():
+        chat = LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=f"d_{uuid.uuid4().hex[:10]}",
+            system_message=DISCUSS_SYSTEM,
+        ).with_model("openai", "gpt-5.4-mini")
+        chunks = []
+        try:
+            async for ev in chat.stream_message(
+                UserMessage(text=f"Product idea ({input.project_type or 'website'}): {prompt}")
+            ):
+                if isinstance(ev, TextDelta):
+                    chunks.append(ev.content)
+                elif isinstance(ev, StreamDone):
+                    break
+            match = re.search(r"\{.*\}", "".join(chunks), re.S)
+            parsed = json.loads(match.group(0)) if match else {}
+            valid = {"brand", "customer", "marketing", "finance", "developer", "video"}
+            messages = [
+                {"bot": m["bot"], "text": str(m["text"])[:280]}
+                for m in parsed.get("messages", [])
+                if isinstance(m, dict) and m.get("bot") in valid and m.get("text")
+            ][:8]
+            for m in messages:
+                await asyncio.sleep(0.55)
+                yield sse({"type": "bot", "bot": m["bot"], "text": m["text"]})
+            await asyncio.sleep(0.4)
+            yield sse({
+                "type": "plan",
+                "summary": str(parsed.get("summary", ""))[:500],
+                "video_proposed": bool(parsed.get("video_proposed")),
+            })
+        except Exception as e:
+            logger.error(f"Discussion failed: {e}")
+            yield sse({"type": "error", "detail": "Team discussion failed"})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@api_router.post("/agent/video")
+async def agent_video(input: GenerateIn, user: dict = Depends(get_current_user)):
+    prompt = input.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Missing context for the video ad")
     chat = LlmChat(
         api_key=os.environ["EMERGENT_LLM_KEY"],
-        session_id=f"q_{uuid.uuid4().hex[:10]}",
-        system_message=QUESTION_SYSTEM,
+        session_id=f"v_{uuid.uuid4().hex[:10]}",
+        system_message=VIDEO_SYSTEM,
     ).with_model("openai", "gpt-5.4-mini")
     chunks = []
     try:
@@ -604,22 +680,38 @@ async def agent_questions(input: GenerateIn, user: dict = Depends(get_current_us
             elif isinstance(ev, StreamDone):
                 break
     except Exception as e:
-        logger.error(f"Question generation failed: {e}")
-        return {"questions": []}
-    match = re.search(r"\[.*\]", "".join(chunks), re.S)
-    questions = []
-    if match:
-        try:
-            parsed = json.loads(match.group(0))
-            for q in parsed[:3]:
-                if isinstance(q, dict) and q.get("q"):
-                    questions.append({
-                        "q": str(q["q"])[:200],
-                        "options": [str(o)[:60] for o in q.get("options", [])][:4],
-                    })
-        except (json.JSONDecodeError, AttributeError):
-            pass
-    return {"questions": questions}
+        logger.error(f"Video storyboard failed: {e}")
+        raise HTTPException(status_code=502, detail="Video bot failed. Try again.")
+    match = re.search(r"\{.*\}", "".join(chunks), re.S)
+    try:
+        storyboard = json.loads(match.group(0)) if match else {}
+    except json.JSONDecodeError:
+        storyboard = {}
+    if not storyboard.get("scenes"):
+        storyboard = {"title": "Video Ad", "scenes": [], "cta": "Learn more"}
+    return storyboard
+
+
+@api_router.post("/uploads")
+async def upload_file(request: Request, user: dict = Depends(get_current_user)):
+    form = await request.form()
+    file = form.get("file")
+    if file is None:
+        raise HTTPException(status_code=400, detail="No file attached")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5 MB)")
+    upload_id = f"up_{uuid.uuid4().hex[:12]}"
+    await db.uploads.insert_one({
+        "upload_id": upload_id,
+        "user_id": user["user_id"],
+        "filename": file.filename or "file",
+        "content_type": file.content_type or "application/octet-stream",
+        "data_b64": base64.b64encode(data).decode(),
+        "created_at": datetime.now(timezone.utc),
+    })
+    return {"upload_id": upload_id, "filename": file.filename or "file",
+            "content_type": file.content_type or "application/octet-stream"}
 
 
 @api_router.post("/generate")
@@ -637,14 +729,38 @@ async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
 
     async def events():
         yield sse({"type": "status", "step": "analyzing"})
+        extras = []
+        if input.project_type == "app":
+            extras.append(
+                "Output format: a MOBILE APP interface rendered inside a centered 390px-wide phone "
+                "frame (rounded 40px corners, soft shadow) on a light backdrop."
+            )
+        else:
+            extras.append("Output format: a full-width responsive WEBSITE.")
+        if input.upload_ids:
+            uploads = await db.uploads.find(
+                {"upload_id": {"$in": input.upload_ids}, "user_id": user["user_id"]}).to_list(5)
+            for up in uploads:
+                name = up["filename"]
+                if up["content_type"].startswith("text/") or name.endswith((".txt", ".md", ".csv")):
+                    content = base64.b64decode(up["data_b64"]).decode("utf-8", "ignore")[:1500]
+                    extras.append(f'Attached file "{name}" content:\n{content}')
+                else:
+                    extras.append(
+                        f'Attached file "{name}" ({up["content_type"]}) — use it as design/context reference.'
+                    )
         if existing:
             system = EDITOR_SYSTEM
             message_text = f"CURRENT HTML:\n{existing['html']}\n\nCHANGE REQUEST: {prompt}"
+            if extras:
+                message_text += "\n\n" + "\n".join(extras)
         else:
             system = GENERATOR_SYSTEM
             message_text = prompt
             if input.context:
-                message_text += f"\n\nClient preferences:\n{input.context}"
+                message_text += f"\n\nTeam plan and client preferences:\n{input.context}"
+            if extras:
+                message_text += "\n\n" + "\n".join(extras)
         chat = LlmChat(
             api_key=os.environ["EMERGENT_LLM_KEY"],
             session_id=gen_id,
@@ -667,10 +783,18 @@ async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
                 raise ValueError("empty generation")
             now = datetime.now(timezone.utc)
             if existing:
+                versions = existing.get("versions") or [{
+                    "html": existing["html"],
+                    "title": existing["title"],
+                    "note": "Initial build",
+                    "created_at": existing["created_at"],
+                }]
+                versions.append({"html": html, "title": title, "note": prompt[:60], "created_at": now})
                 await db.generations.update_one(
                     {"gen_id": gen_id},
                     {
-                        "$set": {"html": html, "title": title},
+                        "$set": {"html": html, "title": title, "versions": versions,
+                                 "current_version": len(versions) - 1},
                         "$push": {"messages": {"$each": [
                             {"role": "user", "text": prompt, "created_at": now},
                             {"role": "agent", "text": f"Updated “{title}” — your change is live.", "created_at": now},
@@ -684,6 +808,9 @@ async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
                     "prompt": prompt,
                     "title": title,
                     "html": html,
+                    "project_type": input.project_type or "website",
+                    "versions": [{"html": html, "title": title, "note": "Initial build", "created_at": now}],
+                    "current_version": 0,
                     "messages": [
                         {"role": "user", "text": prompt, "created_at": now},
                         {"role": "agent", "text": f"Created “{title}” — it's live in the preview.", "created_at": now},
@@ -717,16 +844,44 @@ async def get_generation(gen_id: str, user: dict = Depends(get_current_user)):
         {"gen_id": gen_id, "user_id": user["user_id"]}, {"_id": 0, "html": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Generation not found")
+    versions = doc.pop("versions", []) or []
+    doc["versions"] = [
+        {"index": i, "title": v.get("title"), "note": v.get("note"), "created_at": v.get("created_at")}
+        for i, v in enumerate(versions)
+    ]
+    doc["current_version"] = doc.get("current_version", len(versions) - 1 if versions else 0)
     return doc
 
 
 @api_router.get("/generations/{gen_id}/html")
 async def get_generation_html(gen_id: str, user: dict = Depends(get_current_user)):
     doc = await db.generations.find_one(
-        {"gen_id": gen_id, "user_id": user["user_id"]}, {"_id": 0, "html": 1})
+        {"gen_id": gen_id, "user_id": user["user_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Generation not found")
+    versions = doc.get("versions") or []
+    if versions:
+        idx = doc.get("current_version", len(versions) - 1)
+        idx = max(0, min(idx, len(versions) - 1))
+        return HTMLResponse(versions[idx]["html"])
     return HTMLResponse(doc["html"])
+
+
+@api_router.post("/generations/{gen_id}/revert")
+async def revert_generation(gen_id: str, input: RevertIn, user: dict = Depends(get_current_user)):
+    doc = await db.generations.find_one(
+        {"gen_id": gen_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    versions = doc.get("versions") or []
+    if input.version < 0 or input.version >= len(versions):
+        raise HTTPException(status_code=400, detail="Unknown version")
+    target = versions[input.version]
+    await db.generations.update_one(
+        {"gen_id": gen_id},
+        {"$set": {"current_version": input.version, "html": target["html"], "title": target["title"]}},
+    )
+    return {"status": "ok", "version": input.version, "title": target["title"]}
 
 
 # ---------- Waitlist ----------

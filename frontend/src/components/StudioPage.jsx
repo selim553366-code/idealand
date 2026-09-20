@@ -6,8 +6,27 @@ import { toast } from "sonner";
 import AgentPanel from "@/components/AgentPanel";
 import PreviewPane from "@/components/PreviewPane";
 import GlassOrbs from "@/components/GlassOrbs";
+import { uploadFiles } from "@/utils/uploads";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+const readSSE = async (res, onEvent) => {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop();
+    for (const part of parts) {
+      const line = part.split("\n").find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      onEvent(JSON.parse(line.slice(5).trim()));
+    }
+  }
+};
 
 const StudioPage = ({ user }) => {
   const navigate = useNavigate();
@@ -19,10 +38,20 @@ const StudioPage = ({ user }) => {
   const [mode, setMode] = useState("create");
   const [previewOpen, setPreviewOpen] = useState(true);
   const [messages, setMessages] = useState([]);
-  const [pending, setPending] = useState(null);
   const [asking, setAsking] = useState(false);
   const [tick, setTick] = useState(0);
+  const [reverting, setReverting] = useState(false);
+  const [uploads, setUploads] = useState([]);
+  const [projectType, setProjectType] = useState("website");
   const autoStarted = useRef(false);
+  const draftRef = useRef({ upload_ids: [], project_type: "website" });
+
+  useEffect(() => {
+    draftRef.current = {
+      upload_ids: uploads.map((u) => u.upload_id),
+      project_type: projectType,
+    };
+  }, [uploads, projectType]);
 
   useEffect(() => {
     if (user === false) {
@@ -43,8 +72,11 @@ const StudioPage = ({ user }) => {
     if (!user || autoStarted.current) return;
     if (location.state?.prompt) {
       autoStarted.current = true;
-      const prompt = location.state.prompt;
+      const { prompt, uploads: up = [], projectType: pt = "website" } = location.state;
       navigate(location.pathname, { replace: true, state: {} });
+      setUploads(up);
+      setProjectType(pt);
+      draftRef.current = { upload_ids: up.map((u) => u.upload_id), project_type: pt };
       handleSubmit(prompt);
     } else if (location.state?.genId) {
       autoStarted.current = true;
@@ -64,7 +96,12 @@ const StudioPage = ({ user }) => {
     );
   }
 
-  const runGeneration = async (text, { genId = null, context = null } = {}) => {
+  const fetchMeta = async (genId) => {
+    const { data } = await axios.get(`${API}/generations/${genId}`, { withCredentials: true });
+    return data;
+  };
+
+  const runGeneration = async (text, { genId = null, context = null, withVideo = false } = {}) => {
     setWorking(true);
     setMode(genId ? "edit" : "create");
     setStep("analyzing");
@@ -73,30 +110,31 @@ const StudioPage = ({ user }) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ prompt: text, gen_id: genId, context }),
+        body: JSON.stringify({
+          prompt: text,
+          gen_id: genId,
+          context,
+          project_type: draftRef.current.project_type,
+          upload_ids: draftRef.current.upload_ids,
+        }),
       });
       if (!res.ok || !res.body) throw new Error("request failed");
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
       let doneData = null;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop();
-        for (const part of parts) {
-          const line = part.split("\n").find((l) => l.startsWith("data:"));
-          if (!line) continue;
-          const ev = JSON.parse(line.slice(5).trim());
-          if (ev.type === "status") setStep(ev.step);
-          else if (ev.type === "done") doneData = ev;
-          else if (ev.type === "error") throw new Error(ev.detail || "failed");
-        }
-      }
+      await readSSE(res, (ev) => {
+        if (ev.type === "status") setStep(ev.step);
+        else if (ev.type === "done") doneData = ev;
+        else if (ev.type === "error") throw new Error(ev.detail || "failed");
+      });
       if (!doneData) throw new Error("no result");
-      const gen = { gen_id: doneData.gen_id, title: doneData.title, prompt: text };
+
+      const meta = await fetchMeta(doneData.gen_id).catch(() => null);
+      const gen = {
+        gen_id: doneData.gen_id,
+        title: doneData.title,
+        prompt: text,
+        versions: meta?.versions,
+        current_version: meta?.current_version,
+      };
       setCurrent(gen);
       setTick((t) => t + 1);
       setGens((g) => [gen, ...g.filter((x) => x.gen_id !== gen.gen_id)]);
@@ -105,11 +143,31 @@ const StudioPage = ({ user }) => {
         {
           role: "agent",
           text: genId
-            ? `Updated “${doneData.title}” — your change is live in the preview.`
+            ? `Updated “${doneData.title}” — saved as version ${(meta?.current_version ?? 0) + 1}.`
             : `Done — “${doneData.title}” is live in the preview. Ask me to tweak anything.`,
         },
       ]);
       setPreviewOpen(true);
+
+      if (withVideo) {
+        setMessages((m) => [
+          ...m,
+          { role: "bot", bot: "video", text: "Approved — rolling cameras. Storyboarding your 15-second ad…" },
+        ]);
+        try {
+          const { data } = await axios.post(
+            `${API}/agent/video`,
+            { prompt: `${doneData.title}: ${text}. Plan: ${context || "n/a"}` },
+            { withCredentials: true }
+          );
+          setMessages((m) => [...m, { role: "video", data }]);
+        } catch {
+          setMessages((m) => [
+            ...m,
+            { role: "agent", text: "The video bot tripped on a cable — your site is ready though.", error: true },
+          ]);
+        }
+      }
     } catch (e) {
       setMessages((m) => [
         ...m,
@@ -132,14 +190,28 @@ const StudioPage = ({ user }) => {
     }
     setAsking(true);
     try {
-      const { data } = await axios.post(
-        `${API}/agent/questions`,
-        { prompt: clean },
-        { withCredentials: true }
-      );
-      if (data.questions?.length) {
-        setPending(clean);
-        setMessages((m) => [...m, { role: "questions", questions: data.questions }]);
+      const res = await fetch(`${API}/agent/discuss`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          prompt: clean,
+          project_type: draftRef.current.project_type,
+          upload_ids: draftRef.current.upload_ids,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error("discussion failed");
+      let plan = null;
+      await readSSE(res, (ev) => {
+        if (ev.type === "bot") setMessages((m) => [...m, { role: "bot", bot: ev.bot, text: ev.text }]);
+        else if (ev.type === "plan") plan = ev;
+        else if (ev.type === "error") throw new Error("discussion failed");
+      });
+      if (plan) {
+        setMessages((m) => [
+          ...m,
+          { role: "plan", summary: plan.summary, video: plan.video_proposed, prompt: clean },
+        ]);
       } else {
         await runGeneration(clean);
       }
@@ -150,22 +222,20 @@ const StudioPage = ({ user }) => {
     }
   };
 
-  const handleBuild = async (answersText) => {
-    const idea = pending;
-    setPending(null);
-    setMessages((m) => {
-      const idx = m.map((x) => x.role).lastIndexOf("questions");
-      if (idx === -1) return m;
-      const copy = [...m];
-      copy[idx] = {
-        role: "agent",
-        text: answersText
-          ? "Love it — building with your choices."
-          : "Skipping the questions — building right away.",
-      };
-      return copy;
-    });
-    if (idea) await runGeneration(idea, { context: answersText || null });
+  const handleBuild = async (planMsg, withVideo) => {
+    setMessages((m) =>
+      m.map((x) =>
+        x === planMsg
+          ? {
+              role: "agent",
+              text: withVideo
+                ? "The team is on it — Developer Bot builds the site, then Ad Video Bot rolls cameras."
+                : "The team is on it — building now.",
+            }
+          : x
+      )
+    );
+    await runGeneration(planMsg.prompt, { context: planMsg.summary, withVideo });
   };
 
   const openGen = async (g) => {
@@ -173,12 +243,57 @@ const StudioPage = ({ user }) => {
     setTick((t) => t + 1);
     setPreviewOpen(true);
     try {
-      const { data } = await axios.get(`${API}/generations/${g.gen_id}`, { withCredentials: true });
-      setCurrent({ gen_id: g.gen_id, title: data.title, prompt: data.prompt });
+      const data = await fetchMeta(g.gen_id);
+      setCurrent({
+        gen_id: g.gen_id,
+        title: data.title,
+        prompt: data.prompt,
+        versions: data.versions,
+        current_version: data.current_version,
+      });
+      if (data.project_type) {
+        setProjectType(data.project_type);
+      }
       if (data.messages?.length) {
         setMessages(data.messages.map((m) => ({ role: m.role, text: m.text })));
       }
     } catch {}
+  };
+
+  const handleRevert = async (version) => {
+    if (!current || reverting) return;
+    setReverting(true);
+    try {
+      await axios.post(
+        `${API}/generations/${current.gen_id}/revert`,
+        { version },
+        { withCredentials: true }
+      );
+      const data = await fetchMeta(current.gen_id);
+      setCurrent((c) => ({
+        ...c,
+        title: data.title,
+        versions: data.versions,
+        current_version: data.current_version,
+      }));
+      setTick((t) => t + 1);
+      setGens((g) => g.map((x) => (x.gen_id === current.gen_id ? { ...x, title: data.title } : x)));
+      toast.success(`Restored version ${version + 1}`);
+    } catch {
+      toast.error("Restore failed — try again");
+    } finally {
+      setReverting(false);
+    }
+  };
+
+  const handleAddFiles = async (fileObjs) => {
+    try {
+      const metas = await uploadFiles(fileObjs);
+      setUploads((u) => [...u, ...metas].slice(0, 4));
+      toast.success(`${metas.length} file${metas.length > 1 ? "s" : ""} attached`);
+    } catch {
+      toast.error("Upload failed — max 5 MB per file");
+    }
   };
 
   return (
@@ -213,7 +328,11 @@ const StudioPage = ({ user }) => {
         </div>
       </header>
 
-      <div className={`relative z-10 mx-auto flex min-h-0 w-full flex-1 flex-col gap-4 p-4 transition-all duration-500 lg:flex-row ${previewOpen ? "max-w-[1600px]" : "max-w-none"}`}>
+      <div
+        className={`relative z-10 mx-auto flex min-h-0 w-full flex-1 flex-col gap-4 p-4 transition-all duration-500 lg:flex-row ${
+          previewOpen ? "max-w-[1600px]" : "max-w-none"
+        }`}
+      >
         <AgentPanel
           messages={messages}
           working={working}
@@ -221,13 +340,17 @@ const StudioPage = ({ user }) => {
           step={step}
           mode={mode}
           fullWidth={!previewOpen}
-          pendingIdea={pending}
           onSubmit={handleSubmit}
           onBuild={handleBuild}
           gens={gens}
           currentId={current?.gen_id}
           onSelect={openGen}
           hasCurrent={!!current}
+          files={uploads}
+          onAddFiles={handleAddFiles}
+          onRemoveFile={(i) => setUploads((u) => u.filter((_, x) => x !== i))}
+          projectType={projectType}
+          onTypeChange={setProjectType}
         />
         <PreviewPane
           current={current}
@@ -236,6 +359,8 @@ const StudioPage = ({ user }) => {
           tick={tick}
           open={previewOpen}
           onToggle={() => setPreviewOpen((o) => !o)}
+          onRevert={handleRevert}
+          reverting={reverting}
         />
       </div>
     </div>

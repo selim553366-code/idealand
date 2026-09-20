@@ -1,8 +1,36 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUp, Check, Code2, History, Hammer, Loader2, MessageSquareText, Wand2 } from "lucide-react";
+import {
+  ArrowUp, Check, Clapperboard, Code2, Hammer, History, Loader2,
+  Megaphone, Palette, Users, Wallet,
+} from "lucide-react";
+import ChatExtras from "@/components/ChatExtras";
 
 const EASE = [0.22, 1, 0.36, 1];
+
+const BOTS = {
+  brand: { name: "Brand Bot", icon: Palette, grad: "from-sky-400 to-blue-600" },
+  customer: { name: "Customer Insight", icon: Users, grad: "from-cyan-400 to-teal-600" },
+  marketing: { name: "Ad Marketing", icon: Megaphone, grad: "from-blue-400 to-indigo-500" },
+  finance: { name: "Financial Bot", icon: Wallet, grad: "from-teal-400 to-emerald-600" },
+  developer: { name: "Developer Bot", icon: Code2, grad: "from-sky-500 to-slate-700" },
+  video: { name: "Ad Video Bot", icon: Clapperboard, grad: "from-indigo-400 to-sky-700" },
+};
+
+const BotAvatar = ({ bot, size = 8 }) => {
+  const meta = BOTS[bot] || BOTS.developer;
+  return (
+    <motion.span
+      initial={{ scale: 0, rotate: -20 }}
+      animate={{ scale: 1, rotate: 0 }}
+      transition={{ type: "spring", stiffness: 300, damping: 18 }}
+      className={`flex h-${size} w-${size} shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${meta.grad} text-white shadow-[0_8px_16px_-4px_rgba(14,165,233,0.4),inset_0_2px_2px_rgba(255,255,255,0.45)]`}
+      style={{ height: size * 4, width: size * 4 }}
+    >
+      <meta.icon size={size * 1.7} strokeWidth={2.2} />
+    </motion.span>
+  );
+};
 
 const EmptyArt = () => (
   <div className="relative mb-5 h-24 w-44" aria-hidden="true">
@@ -26,7 +54,7 @@ const EmptyArt = () => (
       transition={{ duration: 4.6, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
       className="glass-card absolute right-0 top-0 flex h-9 w-9 items-center justify-center !rounded-xl text-sky-600"
     >
-      <Wand2 size={15} />
+      <Wand2Icon />
     </motion.div>
     <motion.div
       animate={{ y: [0, -9, 0] }}
@@ -40,10 +68,12 @@ const EmptyArt = () => (
       transition={{ duration: 4.4, repeat: Infinity, ease: "easeInOut", delay: 0.7 }}
       className="glass-card absolute right-14 top-16 flex h-8 w-8 items-center justify-center !rounded-lg text-sky-500"
     >
-      <MessageSquareText size={13} />
+      <Megaphone size={13} />
     </motion.div>
   </div>
 );
+
+const Wand2Icon = () => <Palette size={15} />;
 
 const STEP_SETS = {
   create: [
@@ -75,9 +105,9 @@ const WorkingCard = ({ step, mode }) => {
       data-testid="agent-working-card"
     >
       <div className="mb-3 flex items-center gap-2">
-        <Loader2 size={14} className="animate-spin text-sky-500" />
+        <BotAvatar bot="developer" size={6} />
         <span className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">
-          Agent is crafting
+          Developer Bot is crafting
         </span>
         <span className="ml-1 flex gap-1">
           {[0, 1, 2].map((i) => (
@@ -127,82 +157,98 @@ const WorkingCard = ({ step, mode }) => {
   );
 };
 
-const QuestionsCard = ({ questions, active, onBuild }) => {
-  const [answers, setAnswers] = useState({});
-  const pick = (qi, opt) => setAnswers((a) => ({ ...a, [qi]: a[qi] === opt ? undefined : opt }));
-
-  const answersText = questions
-    .map((q, i) => (answers[i] ? `${q.q} → ${answers[i]}` : null))
-    .filter(Boolean)
-    .join("\n");
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 14, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.45, ease: EASE }}
-      className="glass-card p-4"
-      data-testid="agent-questions-card"
-    >
-      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">
-        Quick questions before I build
+const PlanCard = ({ plan, active, onBuild }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 14, scale: 0.97 }}
+    animate={{ opacity: 1, y: 0, scale: 1 }}
+    transition={{ duration: 0.45, ease: EASE }}
+    className="glass-card p-4"
+    data-testid="agent-plan-card"
+  >
+    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">
+      Team plan
+    </p>
+    <p className="text-sm leading-relaxed text-slate-700">{plan.summary}</p>
+    {plan.video && (
+      <p className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-indigo-600">
+        <Clapperboard size={13} />
+        Ad Video Bot is ready — it only rolls cameras with your approval.
       </p>
-      <div className="space-y-4">
-        {questions.map((q, qi) => (
-          <div key={qi}>
-            <p className="mb-2 text-sm font-semibold text-slate-800">{q.q}</p>
-            <div className="flex flex-wrap gap-2">
-              {q.options.map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  data-testid={`question-${qi}-option`}
-                  disabled={!active}
-                  onClick={() => pick(qi, opt)}
-                  className={`prompt-chip !px-3 !py-1.5 !text-xs ${
-                    answers[qi] === opt ? "chat-bar-glow !bg-white !text-sky-700" : ""
-                  } disabled:opacity-60`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      {active && (
-        <div className="mt-4 flex gap-2.5">
+    )}
+    {active && (
+      <div className="mt-4 flex flex-wrap gap-2.5">
+        <button
+          type="button"
+          data-testid="plan-build-button"
+          onClick={() => onBuild(false)}
+          className="btn-skeuo-primary !py-2.5 text-sm"
+        >
+          <Hammer size={14} />
+          Build it
+        </button>
+        {plan.video && (
           <button
             type="button"
-            data-testid="questions-build-button"
-            onClick={() => onBuild(answersText)}
-            className="btn-skeuo-primary flex-1 !py-2.5 text-sm"
-          >
-            <Hammer size={14} />
-            Build it
-          </button>
-          <button
-            type="button"
-            data-testid="questions-skip-button"
-            onClick={() => onBuild("")}
+            data-testid="plan-build-video-button"
+            onClick={() => onBuild(true)}
             className="btn-skeuo !py-2.5 text-sm"
           >
-            Skip
+            <Clapperboard size={14} className="text-indigo-500" />
+            Build + video ad
           </button>
-        </div>
-      )}
-    </motion.div>
-  );
-};
+        )}
+      </div>
+    )}
+  </motion.div>
+);
 
-const TypingBubble = () => (
+const VideoCard = ({ data }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 14, scale: 0.97 }}
+    animate={{ opacity: 1, y: 0, scale: 1 }}
+    transition={{ duration: 0.45, ease: EASE }}
+    className="glass-card p-4"
+    data-testid="agent-video-card"
+  >
+    <div className="mb-3 flex items-center gap-2">
+      <BotAvatar bot="video" size={6} />
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">
+          Ad Video Bot · Storyboard
+        </p>
+        <p className="font-display text-sm font-bold text-slate-900">{data.title}</p>
+      </div>
+    </div>
+    <div className="space-y-2">
+      {(data.scenes || []).map((s, i) => (
+        <div key={i} className="flex gap-2.5 rounded-xl border border-white/70 bg-white/60 px-3 py-2">
+          <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-700">
+            {s.seconds}s
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700">{s.visual}</p>
+            <p className="text-[11px] italic text-slate-500">“{s.line}”</p>
+          </div>
+        </div>
+      ))}
+    </div>
+    {data.cta && (
+      <p className="mt-3 text-center">
+        <span className="prompt-chip !cursor-default !px-3 !py-1 !text-[11px] font-semibold">{data.cta}</span>
+      </p>
+    )}
+  </motion.div>
+);
+
+const TypingBubble = ({ bot }) => (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
     exit={{ opacity: 0 }}
-    className="flex justify-start"
+    className="flex items-end gap-2.5"
     data-testid="agent-typing"
   >
+    {bot && <BotAvatar bot={bot} size={7} />}
     <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-white/80 bg-white/80 px-4 py-3 shadow-[0_8px_18px_-8px_rgba(14,165,233,0.25)]">
       {[0, 1, 2].map((i) => (
         <span
@@ -222,17 +268,22 @@ const AgentPanel = ({
   step,
   mode,
   fullWidth,
-  pendingIdea,
   onSubmit,
   onBuild,
   gens,
   currentId,
   onSelect,
   hasCurrent,
+  files,
+  onAddFiles,
+  onRemoveFile,
+  projectType,
+  onTypeChange,
 }) => {
   const [value, setValue] = useState("");
   const scrollRef = useRef(null);
   const busy = working || asking;
+  const lastBotMsg = [...messages].reverse().find((m) => m.role === "bot");
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -258,18 +309,18 @@ const AgentPanel = ({
           <span className="relative flex h-2.5 w-2.5">
             <span
               className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${
-                working ? "bg-sky-400" : "bg-emerald-400"
+                busy ? "bg-sky-400" : "bg-emerald-400"
               }`}
             />
             <span
               className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
-                working ? "bg-sky-500" : "bg-emerald-500"
+                busy ? "bg-sky-500" : "bg-emerald-500"
               }`}
             />
           </span>
-          <h2 className="font-display text-base font-bold text-slate-900">Idea Agent</h2>
+          <h2 className="font-display text-base font-bold text-slate-900">Bot Team</h2>
           <span className="text-[11px] font-medium text-slate-400" data-testid="agent-status">
-            {working ? "crafting…" : asking ? "thinking…" : "online"}
+            {working ? "crafting…" : asking ? "discussing…" : "online"}
           </span>
         </div>
         {gens.length > 0 && (
@@ -301,16 +352,42 @@ const AgentPanel = ({
         {messages.length === 0 && !busy && (
           <div className="flex h-full flex-col items-center justify-center text-center" data-testid="agent-empty">
             <EmptyArt />
-            <p className="max-w-[260px] text-sm font-medium text-slate-600">
-              Describe an idea below — I'll ask a couple of quick questions, then craft it live.
+            <p className="max-w-[280px] text-sm font-medium text-slate-600">
+              Describe an idea — the bot team will discuss it, share a plan, then build it live.
             </p>
           </div>
         )}
 
         {messages.map((m, i) => {
-          if (m.role === "questions") {
-            const active = !!pendingIdea && i === messages.length - 1;
-            return <QuestionsCard key={i} questions={m.questions} active={active} onBuild={onBuild} />;
+          if (m.role === "plan") {
+            const active = !busy && i === messages.length - 1 && !hasCurrent;
+            return <PlanCard key={i} plan={m} active={active} onBuild={(v) => onBuild(m, v)} />;
+          }
+          if (m.role === "video") {
+            return <VideoCard key={i} data={m.data} />;
+          }
+          if (m.role === "bot") {
+            const meta = BOTS[m.bot] || BOTS.developer;
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: EASE }}
+                className="flex items-end gap-2.5"
+                data-testid={`bot-message-${m.bot}`}
+              >
+                <BotAvatar bot={m.bot} size={7} />
+                <div className="max-w-[80%]">
+                  <p className="mb-1 ml-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                    {meta.name}
+                  </p>
+                  <div className="rounded-2xl rounded-bl-md border border-white/80 bg-white/85 px-4 py-2.5 text-sm text-slate-700 shadow-[0_8px_18px_-8px_rgba(14,165,233,0.25)]">
+                    {m.text}
+                  </div>
+                </div>
+              </motion.div>
+            );
           }
           return (
             <motion.div
@@ -338,7 +415,7 @@ const AgentPanel = ({
           );
         })}
 
-        <AnimatePresence>{asking && <TypingBubble />}</AnimatePresence>
+        <AnimatePresence>{asking && <TypingBubble bot={lastBotMsg?.bot} />}</AnimatePresence>
         <AnimatePresence>{working && <WorkingCard step={step} mode={mode} />}</AnimatePresence>
       </div>
 
@@ -358,14 +435,22 @@ const AgentPanel = ({
         </div>
       )}
 
-      <form onSubmit={submit} className="chat-bar mt-3 flex items-center gap-2.5 !rounded-2xl p-2.5">
+      <form onSubmit={submit} className="chat-bar mt-3 flex flex-wrap items-center gap-2 !rounded-2xl p-2.5">
+        <ChatExtras
+          files={files}
+          onAddFiles={onAddFiles}
+          onRemoveFile={onRemoveFile}
+          projectType={projectType}
+          onTypeChange={onTypeChange}
+          disabled={busy}
+        />
         <input
           data-testid="agent-input"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={hasCurrent ? "Ask for a change… e.g. make it darker" : "Describe your next idea…"}
           disabled={busy}
-          className="w-full bg-transparent px-2 font-mono text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-50"
+          className="min-w-[120px] flex-1 bg-transparent px-1 font-mono text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-50"
         />
         <button
           type="submit"

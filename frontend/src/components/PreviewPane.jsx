@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ExternalLink, Loader2, PanelRightClose, PanelRightOpen, RotateCw } from "lucide-react";
+import { ExternalLink, History, Loader2, PanelRightClose, PanelRightOpen, RotateCw } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.22, 1, 0.36, 1];
@@ -12,10 +12,11 @@ const STEP_LABELS = {
   polishing: "Polishing the pixels…",
 };
 
-const PreviewPane = ({ current, working, step, tick, open, onToggle }) => {
+const PreviewPane = ({ current, working, step, tick, open, onToggle, onRevert, reverting }) => {
   const [frameKey, setFrameKey] = useState(0);
   const src = current ? `${API}/generations/${current.gen_id}/html` : null;
   const updating = working && !!current;
+  const versions = current?.versions || [];
 
   return (
     <div
@@ -24,25 +25,28 @@ const PreviewPane = ({ current, working, step, tick, open, onToggle }) => {
       }`}
       data-testid="preview-pane"
     >
-      <button
-        data-testid="preview-toggle-button"
-        onClick={onToggle}
-        aria-label={open ? "Close preview" : "Open preview"}
-        className="btn-skeuo absolute -left-1 top-3 z-20 !rounded-xl !px-3 !py-2.5"
-      >
-        {open ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-      </button>
+      {open && (
+        <button
+          data-testid="preview-toggle-button"
+          onClick={onToggle}
+          aria-label="Close preview"
+          className="btn-skeuo absolute -left-1 top-3 z-20 !rounded-xl !px-3 !py-2.5"
+        >
+          <PanelRightClose size={15} />
+        </button>
+      )}
 
       <AnimatePresence>
         {!open && (
           <motion.button
             data-testid="preview-open-pill"
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
+            exit={{ opacity: 0, y: -10 }}
             onClick={onToggle}
-            className="btn-skeuo-primary absolute bottom-5 right-5 z-20 !rounded-full text-sm"
+            className="btn-skeuo-primary absolute right-2 top-3 z-20 !rounded-full !px-4 !py-2.5 text-sm"
           >
+            <PanelRightOpen size={14} />
             Show preview
           </motion.button>
         )}
@@ -88,6 +92,29 @@ const PreviewPane = ({ current, working, step, tick, open, onToggle }) => {
               </span>
             )}
           </div>
+
+          {versions.length > 1 && (
+            <div className="mb-2 flex items-center gap-1.5 overflow-x-auto px-1" data-testid="version-chips">
+              <span className="mr-1 flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                {reverting ? <Loader2 size={11} className="animate-spin" /> : <History size={11} />}
+                Versions
+              </span>
+              {versions.map((v) => (
+                <button
+                  key={v.index}
+                  data-testid={`version-chip-${v.index}`}
+                  disabled={reverting || v.index === current.current_version}
+                  onClick={() => onRevert(v.index)}
+                  title={v.note || `Version ${v.index + 1}`}
+                  className={`prompt-chip shrink-0 !px-2.5 !py-1 !text-[10px] disabled:opacity-70 ${
+                    v.index === current.current_version ? "chat-bar-glow !bg-white !font-bold !text-sky-700" : ""
+                  }`}
+                >
+                  v{v.index + 1}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/80 bg-white">
             {src && (!working || current) ? (
@@ -177,7 +204,7 @@ const PreviewPane = ({ current, working, step, tick, open, onToggle }) => {
                 </div>
                 <p className="font-display text-base font-bold text-slate-800">Your creation appears here</p>
                 <p className="mt-1.5 max-w-[280px] text-sm text-slate-500">
-                  Tell the agent your idea on the left — the live preview renders in this frame.
+                  Tell the team your idea on the left — the live preview renders in this frame.
                 </p>
               </div>
             )}

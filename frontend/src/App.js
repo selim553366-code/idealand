@@ -15,6 +15,7 @@ import WelcomeTour from "@/components/WelcomeTour";
 import ProjectsSection from "@/components/ProjectsSection";
 import StudioPage from "@/components/StudioPage";
 import ResetPassword from "@/components/ResetPassword";
+import { uploadFiles } from "@/utils/uploads";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -92,9 +93,23 @@ const Home = ({ user, setUser }) => {
     toast.success("Signed out. See you soon!");
   };
 
-  const handleGenerate = (prompt) => {
-    if (user) navigate("/studio", { state: { prompt } });
-    else openAuth("signup");
+  const handleGenerate = async (prompt, extras = {}) => {
+    if (!user) {
+      openAuth("signup");
+      return;
+    }
+    let metas = [];
+    if (extras.files?.length) {
+      try {
+        metas = await uploadFiles(extras.files);
+      } catch {
+        toast.error("File upload failed — try again");
+        return;
+      }
+    }
+    navigate("/studio", {
+      state: { prompt, uploads: metas, projectType: extras.projectType || "website" },
+    });
   };
 
   const handleTourDone = async () => {
