@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { Wand2, Boxes, Rocket } from "lucide-react";
 
 const EASE = [0.22, 1, 0.36, 1];
 
@@ -7,7 +6,6 @@ const FEATURES = [
   {
     id: "canvas",
     num: "01",
-    icon: Wand2,
     badge: "Prompt-to-Code",
     title: "Instant AI Canvas",
     description:
@@ -16,7 +14,6 @@ const FEATURES = [
   {
     id: "engine",
     num: "02",
-    icon: Boxes,
     badge: "Full Stack",
     title: "Smart Component Engine",
     description:
@@ -25,7 +22,6 @@ const FEATURES = [
   {
     id: "deploy",
     num: "03",
-    icon: Rocket,
     badge: "Instant Deploy",
     title: "One-Click Instant Launch",
     description:
@@ -64,10 +60,7 @@ const Features = () => (
             <span className="pointer-events-none absolute -right-3 -top-5 font-display text-[88px] font-extrabold leading-none text-sky-100/90 transition-colors duration-500 group-hover:text-sky-200/90">
               {f.num}
             </span>
-            <span className="logo-orb mb-5 !w-11 !h-11">
-              <f.icon size={19} strokeWidth={2.2} />
-            </span>
-            <span className="prompt-chip mb-4 !cursor-default !px-3 !py-1 !text-[11px]">
+            <span className="prompt-chip mb-5 !cursor-default !px-3 !py-1 !text-[11px]">
               {f.badge}
             </span>
             <h3 className="font-display text-lg font-semibold text-slate-900 sm:text-xl">

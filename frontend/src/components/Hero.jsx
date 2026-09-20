@@ -1,5 +1,4 @@
 import { motion, useScroll, useTransform } from "framer-motion";
-import { CheckCheck, Layers } from "lucide-react";
 import ChatBar from "@/components/ChatBar";
 
 const EASE = [0.22, 1, 0.36, 1];
@@ -10,7 +9,7 @@ const lines = [
   { text: "in seconds.", gradient: false },
 ];
 
-const FloatCard = ({ className, icon, title, sub, delay, y }) => (
+const FloatCard = ({ className, title, sub, delay, y }) => (
   <motion.div
     style={{ y }}
     initial={{ opacity: 0, scale: 0.8, rotate: -6 }}
@@ -21,13 +20,10 @@ const FloatCard = ({ className, icon, title, sub, delay, y }) => (
     <motion.div
       animate={{ y: [0, -14, 0] }}
       transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay }}
-      className="glass-card flex items-center gap-3 !rounded-2xl px-4 py-3"
+      className="glass-card !rounded-2xl px-4 py-3"
     >
-      <span className="logo-orb !w-9 !h-9">{icon}</span>
-      <span>
-        <span className="block text-xs font-semibold text-slate-800">{title}</span>
-        <span className="block text-[11px] text-slate-500">{sub}</span>
-      </span>
+      <span className="block text-xs font-semibold text-slate-800">{title}</span>
+      <span className="block text-[11px] text-slate-500">{sub}</span>
     </motion.div>
   </motion.div>
 );
@@ -41,7 +37,6 @@ const Hero = ({ onGenerate }) => {
     <section id="studio" className="relative px-4 pt-36 pb-16 sm:pt-44 sm:pb-20">
       <FloatCard
         className="left-[6%] top-[30%]"
-        icon={<CheckCheck size={16} strokeWidth={2.5} />}
         title="Deployed to the edge"
         sub="0.8s · SSL · custom domain"
         delay={1.1}
@@ -49,7 +44,6 @@ const Hero = ({ onGenerate }) => {
       />
       <FloatCard
         className="right-[5%] top-[22%]"
-        icon={<Layers size={16} strokeWidth={2.5} />}
         title="React + Tailwind generated"
         sub="clean, accessible components"
         delay={1.3}

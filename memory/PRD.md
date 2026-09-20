@@ -23,7 +23,8 @@
 - DB: MongoDB `waitlist` collection via MONGO_URL/DB_NAME env
 
 ## Implemented
-- 2026-07: Landing page MVP — hero masked reveal, typewriter chat bar (visual demo), prompt chips, glassmorphic navbar, marquee, numbered feature cards, waitlist modal with queue number, footer. Badge pill above hero headline removed per user request.
+- 2026-07: Landing page MVP — hero masked reveal, typewriter chat bar (visual demo), prompt chips, glassmorphic navbar, marquee, numbered feature cards, footer. Badge pill above hero headline removed per user request.
+- 2026-07: Auth — JWT email/password (register/login/logout/refresh, brute-force lockout, admin seeding) + Emergent-managed Google OAuth + Resend welcome email on signup (sky-blue branded template). Waitlist modal replaced: "Get Started" now opens signup; Sign in modal is sign-in only. All sparkle orb icons removed per user request.
 
 ## Backlog
 - P0: Real AI generation behind the chat bar (user deferred: "şuanlık olmasın")

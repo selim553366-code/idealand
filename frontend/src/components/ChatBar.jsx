@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Sparkles, Store, Layout, User } from "lucide-react";
+import { ArrowUp, Store, Layout, User } from "lucide-react";
 
 const PHRASES = [
   "A landing page for my coffee brand…",
@@ -68,10 +68,7 @@ const ChatBar = ({ onGenerate }) => {
         className={`chat-bar flex items-center gap-3 p-3 sm:p-4 ${glow ? "chat-bar-glow" : ""}`}
         data-testid="hero-chat-bar"
       >
-        <span className="logo-orb ml-1 hidden !w-9 !h-9 shrink-0 sm:inline-flex">
-          <Sparkles size={15} strokeWidth={2.4} />
-        </span>
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1 pl-1">
           <input
             ref={inputRef}
             data-testid="hero-chat-bar-input"
