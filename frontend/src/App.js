@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import Lenis from "lenis";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
@@ -11,6 +11,9 @@ import Features from "@/components/Features";
 import Footer from "@/components/Footer";
 import AuthModal from "@/components/AuthModal";
 import GlassOrbs from "@/components/GlassOrbs";
+import WelcomeTour from "@/components/WelcomeTour";
+import StudioPage from "@/components/StudioPage";
+import ResetPassword from "@/components/ResetPassword";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -38,9 +41,7 @@ const AuthCallback = ({ onDone }) => {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4" data-testid="auth-callback">
-      <span className="logo-orb !w-12 !h-12 !rounded-2xl">
-        <Loader2 size={20} className="animate-spin" />
-      </span>
+      <Loader2 size={22} className="animate-spin text-sky-500" />
       <p className="font-display text-sm font-semibold text-slate-600">Signing you in…</p>
     </div>
   );
@@ -50,6 +51,7 @@ const Home = ({ user, setUser }) => {
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState("signup");
   const lenisRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const lenis = new Lenis({ lerp: 0.09, smoothWheel: true });
@@ -89,19 +91,31 @@ const Home = ({ user, setUser }) => {
     toast.success("Signed out. See you soon!");
   };
 
+  const handleGenerate = (prompt) => {
+    if (user) navigate("/studio", { state: { prompt } });
+    else openAuth("signup");
+  };
+
+  const handleTourDone = async () => {
+    try {
+      await axios.post(`${API}/auth/tour-seen`, {}, { withCredentials: true });
+    } catch {}
+    setUser((u) => (u ? { ...u, tour_seen: true } : u));
+  };
+
   return (
     <div className="relative min-h-screen overflow-x-clip">
       <GlassOrbs />
       <div className="noise-overlay" aria-hidden="true" />
       <Navbar
-        onGetStarted={() => openAuth("signup")}
+        onGetStarted={() => (user ? navigate("/studio") : openAuth("signup"))}
         onNavigate={scrollTo}
         user={user}
         onSignIn={() => openAuth("signin")}
         onSignOut={handleSignOut}
       />
       <main className="relative z-10">
-        <Hero onGenerate={() => openAuth("signup")} />
+        <Hero onGenerate={handleGenerate} />
         <Marquee />
         <Features />
       </main>
@@ -113,12 +127,13 @@ const Home = ({ user, setUser }) => {
         onClose={() => setAuthOpen(false)}
         onAuth={setUser}
       />
+      {user && !user.tour_seen && <WelcomeTour onDone={handleTourDone} />}
       <Toaster position="top-center" richColors />
     </div>
   );
 };
 
-const AppRouter = () => {
+const AppShell = () => {
   const location = useLocation();
   const [user, setUser] = useState(null);
   const isCallback = location.hash?.includes("session_id=");
@@ -145,15 +160,20 @@ const AppRouter = () => {
       />
     );
   }
-  return <Home user={user} setUser={setUser} />;
+
+  return (
+    <Routes>
+      <Route path="/" element={<Home user={user} setUser={setUser} />} />
+      <Route path="/studio" element={<StudioPage user={user} />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+    </Routes>
+  );
 };
 
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<AppRouter />} />
-      </Routes>
+      <AppShell />
     </BrowserRouter>
   );
 }

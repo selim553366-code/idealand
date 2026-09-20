@@ -6,9 +6,11 @@ load_dotenv(ROOT_DIR / '.env')
 
 import asyncio
 import ipaddress
+import json
 import logging
 import os
 import re
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -19,7 +21,9 @@ from urllib.parse import urlparse
 import bcrypt
 import httpx
 import jwt
+from emergentintegrations.llm.chat import LlmChat, StreamDone, TextDelta, UserMessage
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -99,7 +103,7 @@ def set_auth_cookies(response: Response, user_id: str, email: str):
 
 
 def public_user(doc: dict) -> dict:
-    keys = ("user_id", "name", "email", "picture", "role", "auth_provider")
+    keys = ("user_id", "name", "email", "picture", "role", "auth_provider", "tour_seen")
     return {k: doc[k] for k in keys if doc.get(k) is not None}
 
 
@@ -441,6 +445,207 @@ async def google_session(request: Request, response: Response):
     return public_user(user)
 
 
+# ---------- Password reset ----------
+class ForgotIn(BaseModel):
+    email: str
+
+
+class ResetIn(BaseModel):
+    token: str
+    password: str
+
+
+def reset_email_html(name: str, link: str) -> str:
+    safe_name = escape(name)
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="background:#E0F2FE;padding:36px 16px;"><tr><td align="center">'
+        '<table role="presentation" width="560" cellpadding="0" cellspacing="0" '
+        'style="background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 20px 50px rgba(14,165,233,0.18);">'
+        '<tr><td style="background:linear-gradient(135deg,#38BDF8,#0284C7);padding:34px 40px;">'
+        '<div style="font-family:Arial,sans-serif;font-size:26px;font-weight:800;color:#ffffff;">idealand.ai</div>'
+        '<div style="font-family:Arial,sans-serif;font-size:13px;color:#E0F2FE;margin-top:6px;">Where ideas become living products</div>'
+        '</td></tr>'
+        f'<tr><td style="padding:36px 40px;font-family:Arial,sans-serif;color:#0F172A;">'
+        f'<h1 style="font-size:22px;margin:0 0 12px;">Reset your password</h1>'
+        f'<p style="font-size:15px;line-height:1.65;color:#475569;margin:0 0 24px;">'
+        f'Hi {safe_name}, we received a request to reset the password for your idealand.ai account. '
+        'This link expires in 1 hour. If you did not request it, you can ignore this email.</p>'
+        '<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
+        '<td style="background:#0284C7;border-radius:14px;">'
+        f'<a href="{link}" style="display:inline-block;padding:14px 28px;font-family:Arial,sans-serif;'
+        'font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">Choose a new password</a>'
+        '</td></tr></table>'
+        '<p style="font-size:12px;color:#94A3B8;margin:30px 0 0;">'
+        f'Sent by {escape(EMAIL_FROM_NAME)}. We never ask for your password by email.</p>'
+        '</td></tr></table></td></tr></table>'
+    )
+
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(input: ForgotIn):
+    email = input.email.strip().lower()
+    if EMAIL_RE.match(email):
+        user = await db.users.find_one({"email": email})
+        if user:
+            token = secrets.token_urlsafe(32)
+            await db.password_reset_tokens.insert_one({
+                "token": token,
+                "email": email,
+                "used": False,
+                "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+                "created_at": datetime.now(timezone.utc),
+            })
+            link = f"{FRONTEND_URL}/reset-password?token={token}"
+            try:
+                await send_email(
+                    to=email,
+                    subject="Reset your idealand.ai password",
+                    html=reset_email_html(user.get("name") or "there", link),
+                )
+            except Exception as e:
+                logger.error(f"Reset email failed for {email}: {e}")
+    return {"status": "ok"}
+
+
+@api_router.post("/auth/reset-password")
+async def reset_password(input: ResetIn):
+    if len(input.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    rec = await db.password_reset_tokens.find_one({"token": input.token})
+    if not rec or rec.get("used"):
+        raise HTTPException(status_code=400, detail="This reset link is invalid or already used")
+    expires = rec["expires_at"]
+    if isinstance(expires, str):
+        expires = datetime.fromisoformat(expires)
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="This reset link has expired")
+    await db.users.update_one({"email": rec["email"]},
+                              {"$set": {"password_hash": hash_password(input.password)}})
+    await db.password_reset_tokens.update_one({"token": input.token}, {"$set": {"used": True}})
+    return {"status": "ok"}
+
+
+@api_router.post("/auth/tour-seen")
+async def tour_seen(user: dict = Depends(get_current_user)):
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"tour_seen": True}})
+    return {"status": "ok"}
+
+
+# ---------- AI generation ----------
+GENERATOR_SYSTEM = (
+    "You are idealand.ai's product generator. Given a user's idea, you create a complete, visually "
+    "stunning, self-contained single-file HTML website or app prototype. Rules: the first line must be "
+    "exactly 'TITLE: <2-4 word product name>', then a blank line, then the raw HTML document starting "
+    "with <!DOCTYPE html>. No markdown code fences, no explanations. All CSS and JS must be inline in "
+    "the single file. Google Fonts via CDN link tags are allowed. Use modern responsive design with "
+    "smooth animations and realistic sample content (no lorem ipsum). Never reference local files."
+)
+
+
+class GenerateIn(BaseModel):
+    prompt: str
+
+
+def sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def parse_generation(raw: str):
+    text = raw.strip()
+    title = "Untitled Creation"
+    if text.startswith("TITLE:"):
+        first, _, rest = text.partition("\n")
+        title = first.replace("TITLE:", "").strip() or title
+        text = rest.strip()
+    text = re.sub(r"^```(?:html)?\s*", "", text)
+    text = re.sub(r"```\s*$", "", text)
+    idx = text.lower().find("<!doctype")
+    if idx > 0:
+        text = text[idx:]
+    if "<html" not in text.lower():
+        return title, None
+    return title, text
+
+
+@api_router.post("/generate")
+async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
+    prompt = input.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Describe your idea first")
+    gen_id = f"gen_{uuid.uuid4().hex[:12]}"
+
+    async def events():
+        yield sse({"type": "status", "step": "analyzing"})
+        chat = LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=gen_id,
+            system_message=GENERATOR_SYSTEM,
+        ).with_model("openai", "gpt-5.4")
+        chunks, total, stage = [], 0, 0
+        thresholds = [(600, "designing"), (2500, "coding"), (8000, "polishing")]
+        try:
+            async for ev in chat.stream_message(UserMessage(text=prompt)):
+                if isinstance(ev, TextDelta):
+                    chunks.append(ev.content)
+                    total += len(ev.content)
+                    while stage < len(thresholds) and total > thresholds[stage][0]:
+                        yield sse({"type": "status", "step": thresholds[stage][1]})
+                        stage += 1
+                elif isinstance(ev, StreamDone):
+                    break
+            title, html = parse_generation("".join(chunks))
+            if not html:
+                raise ValueError("empty generation")
+            await db.generations.insert_one({
+                "gen_id": gen_id,
+                "user_id": user["user_id"],
+                "prompt": prompt,
+                "title": title,
+                "html": html,
+                "created_at": datetime.now(timezone.utc),
+            })
+            yield sse({"type": "done", "gen_id": gen_id, "title": title})
+        except Exception as e:
+            logger.error(f"Generation failed for {user['user_id']}: {e}")
+            yield sse({"type": "error", "detail": "Generation failed. Please try again."})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@api_router.get("/generations")
+async def list_generations(user: dict = Depends(get_current_user)):
+    docs = await db.generations.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "html": 0},
+    ).sort("created_at", -1).to_list(30)
+    return docs
+
+
+@api_router.get("/generations/{gen_id}")
+async def get_generation(gen_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.generations.find_one(
+        {"gen_id": gen_id, "user_id": user["user_id"]}, {"_id": 0, "html": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    return doc
+
+
+@api_router.get("/generations/{gen_id}/html")
+async def get_generation_html(gen_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.generations.find_one(
+        {"gen_id": gen_id, "user_id": user["user_id"]}, {"_id": 0, "html": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    return HTMLResponse(doc["html"])
+
+
 # ---------- Waitlist ----------
 @api_router.get("/")
 async def root():
@@ -503,6 +708,8 @@ async def startup():
     await db.users.create_index("email", unique=True)
     await db.user_sessions.create_index("session_token")
     await db.login_attempts.create_index("identifier")
+    await db.generations.create_index([("user_id", 1), ("created_at", -1)])
+    await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
     await seed_admin()
 
 
