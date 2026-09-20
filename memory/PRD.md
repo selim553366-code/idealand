@@ -27,6 +27,7 @@
 - 2026-07: Auth — JWT email/password (register/login/logout/refresh, brute-force lockout, admin seeding) + Emergent-managed Google OAuth + Resend welcome email on signup (sky-blue branded template). Waitlist modal replaced: "Get Started" now opens signup; Sign in modal is sign-in only. All sparkle orb icons removed per user request.
 - 2026-07: AI Studio (/studio, auth-gated) — real GPT-5.4 generation via SSE: agent panel with animated step tracker (analyzing→designing→coding→polishing), chat messages, generation history chips, collapsible live preview (iframe, refresh/open-in-tab, glass browser chrome). Homepage Generate → navigates to studio when signed in.
 - 2026-07: Password reset — "Forgot password?" in sign-in modal, Resend reset link email (1h token), /reset-password page. 3-step Welcome Tour on first login (tour_seen flag).
+- 2026-07: Agent upgrades — clarifying-questions flow (gpt-5.4-mini, option chips + Build it/Skip) before first build; chat-based iteration (edit mode: full HTML rewrite via EDITOR_SYSTEM, same gen_id, messages persisted per generation); agent panel: live status dot, EmptyArt animated shape cluster, tweak chips; preview keeps old site visible with "Updating…" overlay during edits; preview close → agent panel expands fullscreen (fixed flex wrapper bug); homepage "Your projects" section for signed-in users (New project card + past creations with gradient covers → opens in studio); hero microcopy removed per user request.
 
 ## Backlog
 - P0: Real AI generation behind the chat bar (user deferred: "şuanlık olmasın")

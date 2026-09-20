@@ -16,8 +16,12 @@ const StudioPage = ({ user }) => {
   const [current, setCurrent] = useState(null);
   const [working, setWorking] = useState(false);
   const [step, setStep] = useState(null);
+  const [mode, setMode] = useState("create");
   const [previewOpen, setPreviewOpen] = useState(true);
   const [messages, setMessages] = useState([]);
+  const [pending, setPending] = useState(null);
+  const [asking, setAsking] = useState(false);
+  const [tick, setTick] = useState(0);
   const autoStarted = useRef(false);
 
   useEffect(() => {
@@ -36,11 +40,17 @@ const StudioPage = ({ user }) => {
   }, [user]);
 
   useEffect(() => {
-    if (user && location.state?.prompt && !autoStarted.current) {
+    if (!user || autoStarted.current) return;
+    if (location.state?.prompt) {
       autoStarted.current = true;
       const prompt = location.state.prompt;
       navigate(location.pathname, { replace: true, state: {} });
-      startGeneration(prompt);
+      handleSubmit(prompt);
+    } else if (location.state?.genId) {
+      autoStarted.current = true;
+      const genId = location.state.genId;
+      navigate(location.pathname, { replace: true, state: {} });
+      openGen({ gen_id: genId });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -54,18 +64,16 @@ const StudioPage = ({ user }) => {
     );
   }
 
-  const startGeneration = async (prompt) => {
-    const text = (prompt || "").trim();
-    if (!text || working) return;
+  const runGeneration = async (text, { genId = null, context = null } = {}) => {
     setWorking(true);
+    setMode(genId ? "edit" : "create");
     setStep("analyzing");
-    setMessages((m) => [...m, { role: "user", text }]);
     try {
       const res = await fetch(`${API}/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ prompt: text }),
+        body: JSON.stringify({ prompt: text, gen_id: genId, context }),
       });
       if (!res.ok || !res.body) throw new Error("request failed");
       const reader = res.body.getReader();
@@ -90,10 +98,16 @@ const StudioPage = ({ user }) => {
       if (!doneData) throw new Error("no result");
       const gen = { gen_id: doneData.gen_id, title: doneData.title, prompt: text };
       setCurrent(gen);
-      setGens((g) => [gen, ...g]);
+      setTick((t) => t + 1);
+      setGens((g) => [gen, ...g.filter((x) => x.gen_id !== gen.gen_id)]);
       setMessages((m) => [
         ...m,
-        { role: "agent", text: `Done — “${doneData.title}” is live in the preview. Ask me to tweak anything.` },
+        {
+          role: "agent",
+          text: genId
+            ? `Updated “${doneData.title}” — your change is live in the preview.`
+            : `Done — “${doneData.title}” is live in the preview. Ask me to tweak anything.`,
+        },
       ]);
       setPreviewOpen(true);
     } catch (e) {
@@ -106,6 +120,65 @@ const StudioPage = ({ user }) => {
       setWorking(false);
       setStep(null);
     }
+  };
+
+  const handleSubmit = async (text) => {
+    const clean = (text || "").trim();
+    if (!clean || working || asking) return;
+    setMessages((m) => [...m, { role: "user", text: clean }]);
+    if (current) {
+      await runGeneration(clean, { genId: current.gen_id });
+      return;
+    }
+    setAsking(true);
+    try {
+      const { data } = await axios.post(
+        `${API}/agent/questions`,
+        { prompt: clean },
+        { withCredentials: true }
+      );
+      if (data.questions?.length) {
+        setPending(clean);
+        setMessages((m) => [...m, { role: "questions", questions: data.questions }]);
+      } else {
+        await runGeneration(clean);
+      }
+    } catch {
+      await runGeneration(clean);
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const handleBuild = async (answersText) => {
+    const idea = pending;
+    setPending(null);
+    setMessages((m) => {
+      const idx = m.map((x) => x.role).lastIndexOf("questions");
+      if (idx === -1) return m;
+      const copy = [...m];
+      copy[idx] = {
+        role: "agent",
+        text: answersText
+          ? "Love it — building with your choices."
+          : "Skipping the questions — building right away.",
+      };
+      return copy;
+    });
+    if (idea) await runGeneration(idea, { context: answersText || null });
+  };
+
+  const openGen = async (g) => {
+    setCurrent({ gen_id: g.gen_id, title: g.title || "Loading…", prompt: g.prompt || "" });
+    setTick((t) => t + 1);
+    setPreviewOpen(true);
+    try {
+      const { data } = await axios.get(`${API}/generations/${g.gen_id}`, { withCredentials: true });
+      setCurrent({ gen_id: g.gen_id, title: data.title, prompt: data.prompt });
+      if (data.messages?.length) {
+        setMessages(data.messages.map((m) => ({ role: m.role, text: m.text })));
+      }
+    } catch {}
   };
 
   return (
@@ -140,23 +213,27 @@ const StudioPage = ({ user }) => {
         </div>
       </header>
 
-      <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col gap-4 p-4 lg:flex-row">
+      <div className={`relative z-10 mx-auto flex min-h-0 w-full flex-1 flex-col gap-4 p-4 transition-all duration-500 lg:flex-row ${previewOpen ? "max-w-[1600px]" : "max-w-none"}`}>
         <AgentPanel
           messages={messages}
           working={working}
+          asking={asking}
           step={step}
-          onGenerate={startGeneration}
+          mode={mode}
+          fullWidth={!previewOpen}
+          pendingIdea={pending}
+          onSubmit={handleSubmit}
+          onBuild={handleBuild}
           gens={gens}
           currentId={current?.gen_id}
-          onSelect={(g) => {
-            setCurrent(g);
-            setPreviewOpen(true);
-          }}
+          onSelect={openGen}
+          hasCurrent={!!current}
         />
         <PreviewPane
           current={current}
           working={working}
           step={step}
+          tick={tick}
           open={previewOpen}
           onToggle={() => setPreviewOpen((o) => !o)}
         />

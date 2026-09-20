@@ -545,8 +545,24 @@ GENERATOR_SYSTEM = (
 )
 
 
+EDITOR_SYSTEM = (
+    "You are idealand.ai's product editor. You receive an existing single-file HTML website and a "
+    "change request. Return the COMPLETE updated HTML file with the change applied, keeping everything "
+    "else intact. First line exactly 'TITLE: <same or improved 2-4 word name>', then a blank line, then "
+    "the raw HTML starting with <!DOCTYPE html>. No markdown code fences, no explanations."
+)
+
+QUESTION_SYSTEM = (
+    "You are idealand.ai's product strategist. Given a user's rough idea for a website or app, ask exactly "
+    "2 short clarifying questions that would most improve the result. Output ONLY a JSON array, no markdown "
+    'fences: [{"q": "question text", "options": ["opt1", "opt2", "opt3"]}]. Keep each option under 5 words.'
+)
+
+
 class GenerateIn(BaseModel):
     prompt: str
+    gen_id: Optional[str] = None
+    context: Optional[str] = None
 
 
 def sse(payload: dict) -> str:
@@ -570,24 +586,74 @@ def parse_generation(raw: str):
     return title, text
 
 
+@api_router.post("/agent/questions")
+async def agent_questions(input: GenerateIn, user: dict = Depends(get_current_user)):
+    prompt = input.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Describe your idea first")
+    chat = LlmChat(
+        api_key=os.environ["EMERGENT_LLM_KEY"],
+        session_id=f"q_{uuid.uuid4().hex[:10]}",
+        system_message=QUESTION_SYSTEM,
+    ).with_model("openai", "gpt-5.4-mini")
+    chunks = []
+    try:
+        async for ev in chat.stream_message(UserMessage(text=prompt)):
+            if isinstance(ev, TextDelta):
+                chunks.append(ev.content)
+            elif isinstance(ev, StreamDone):
+                break
+    except Exception as e:
+        logger.error(f"Question generation failed: {e}")
+        return {"questions": []}
+    match = re.search(r"\[.*\]", "".join(chunks), re.S)
+    questions = []
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            for q in parsed[:3]:
+                if isinstance(q, dict) and q.get("q"):
+                    questions.append({
+                        "q": str(q["q"])[:200],
+                        "options": [str(o)[:60] for o in q.get("options", [])][:4],
+                    })
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    return {"questions": questions}
+
+
 @api_router.post("/generate")
 async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
     prompt = input.prompt.strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Describe your idea first")
-    gen_id = f"gen_{uuid.uuid4().hex[:12]}"
+    gen_id = input.gen_id or f"gen_{uuid.uuid4().hex[:12]}"
+    existing = None
+    if input.gen_id:
+        existing = await db.generations.find_one(
+            {"gen_id": input.gen_id, "user_id": user["user_id"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail="Generation not found")
 
     async def events():
         yield sse({"type": "status", "step": "analyzing"})
+        if existing:
+            system = EDITOR_SYSTEM
+            message_text = f"CURRENT HTML:\n{existing['html']}\n\nCHANGE REQUEST: {prompt}"
+        else:
+            system = GENERATOR_SYSTEM
+            message_text = prompt
+            if input.context:
+                message_text += f"\n\nClient preferences:\n{input.context}"
         chat = LlmChat(
             api_key=os.environ["EMERGENT_LLM_KEY"],
             session_id=gen_id,
-            system_message=GENERATOR_SYSTEM,
+            system_message=system,
         ).with_model("openai", "gpt-5.4")
         chunks, total, stage = [], 0, 0
         thresholds = [(600, "designing"), (2500, "coding"), (8000, "polishing")]
         try:
-            async for ev in chat.stream_message(UserMessage(text=prompt)):
+            async for ev in chat.stream_message(UserMessage(text=message_text)):
                 if isinstance(ev, TextDelta):
                     chunks.append(ev.content)
                     total += len(ev.content)
@@ -599,14 +665,31 @@ async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
             title, html = parse_generation("".join(chunks))
             if not html:
                 raise ValueError("empty generation")
-            await db.generations.insert_one({
-                "gen_id": gen_id,
-                "user_id": user["user_id"],
-                "prompt": prompt,
-                "title": title,
-                "html": html,
-                "created_at": datetime.now(timezone.utc),
-            })
+            now = datetime.now(timezone.utc)
+            if existing:
+                await db.generations.update_one(
+                    {"gen_id": gen_id},
+                    {
+                        "$set": {"html": html, "title": title},
+                        "$push": {"messages": {"$each": [
+                            {"role": "user", "text": prompt, "created_at": now},
+                            {"role": "agent", "text": f"Updated “{title}” — your change is live.", "created_at": now},
+                        ]}},
+                    },
+                )
+            else:
+                await db.generations.insert_one({
+                    "gen_id": gen_id,
+                    "user_id": user["user_id"],
+                    "prompt": prompt,
+                    "title": title,
+                    "html": html,
+                    "messages": [
+                        {"role": "user", "text": prompt, "created_at": now},
+                        {"role": "agent", "text": f"Created “{title}” — it's live in the preview.", "created_at": now},
+                    ],
+                    "created_at": now,
+                })
             yield sse({"type": "done", "gen_id": gen_id, "title": title})
         except Exception as e:
             logger.error(f"Generation failed for {user['user_id']}: {e}")

@@ -12,6 +12,7 @@ import Footer from "@/components/Footer";
 import AuthModal from "@/components/AuthModal";
 import GlassOrbs from "@/components/GlassOrbs";
 import WelcomeTour from "@/components/WelcomeTour";
+import ProjectsSection from "@/components/ProjectsSection";
 import StudioPage from "@/components/StudioPage";
 import ResetPassword from "@/components/ResetPassword";
 
@@ -116,6 +117,7 @@ const Home = ({ user, setUser }) => {
       />
       <main className="relative z-10">
         <Hero onGenerate={handleGenerate} />
+        <ProjectsSection user={user} />
         <Marquee />
         <Features />
       </main>

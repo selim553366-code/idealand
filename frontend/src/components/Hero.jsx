@@ -88,16 +88,6 @@ const Hero = ({ onGenerate }) => {
         >
           <ChatBar onGenerate={onGenerate} />
         </motion.div>
-
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.2, duration: 0.8 }}
-          className="mt-5 text-xs font-medium tracking-wide text-slate-500 sm:text-sm"
-          data-testid="hero-microcopy"
-        >
-          Free during early access · No credit card · Your idea stays yours
-        </motion.p>
       </div>
     </section>
   );
