@@ -6,7 +6,9 @@ load_dotenv(ROOT_DIR / '.env')
 
 import asyncio
 import base64
+import io
 import ipaddress
+import zipfile
 import json
 import logging
 import os
@@ -979,6 +981,202 @@ async def agent_portfolio(bot: str, user: dict = Depends(get_current_user)):
                             "created_at": m.get("created_at"),
                         })
     return {"bot": bot, "items": items[:40]}
+
+
+BOT_PERSONAS = {
+    "brand": "You are Brand Bot, idealand.ai's witty brand strategist — naming, visual identity, tone of voice.",
+    "customer": "You are Customer Insight Bot, idealand.ai's empathetic audience researcher — user needs, personas, objections.",
+    "marketing": "You are Ad Marketing Bot, idealand.ai's growth mind — ad angles, channels, hooks.",
+    "finance": "You are Financial Bot, idealand.ai's pragmatic CFO — pricing, budgets, unit economics.",
+    "developer": "You are Developer Bot, idealand.ai's senior engineer — architecture, code, feasibility.",
+    "video": "You are Ad Video Bot, idealand.ai's video creative director — storyboards, hooks, 15-second ads.",
+}
+
+
+class BotChatIn(BaseModel):
+    message: str
+    gen_id: Optional[str] = None
+
+
+@api_router.get("/agent/chat/{bot}")
+async def get_bot_chat(bot: str, user: dict = Depends(get_current_user)):
+    if bot not in VALID_BOTS:
+        raise HTTPException(status_code=404, detail="Unknown bot")
+    doc = await db.bot_chats.find_one(
+        {"user_id": user["user_id"], "bot": bot}, {"_id": 0, "messages": 1})
+    return {"bot": bot, "messages": (doc or {}).get("messages", [])[-40:]}
+
+
+@api_router.post("/agent/chat/{bot}")
+async def bot_chat(bot: str, input: BotChatIn, user: dict = Depends(get_current_user)):
+    if bot not in VALID_BOTS:
+        raise HTTPException(status_code=404, detail="Unknown bot")
+    message = input.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Empty message")
+    doc = await db.bot_chats.find_one({"user_id": user["user_id"], "bot": bot})
+    history = (doc or {}).get("messages", [])[-8:]
+    context_lines = "\n".join(
+        f"{'User' if m['role'] == 'user' else 'You'}: {m['text']}" for m in history)
+    project_ctx = ""
+    if input.gen_id:
+        gen = await db.generations.find_one(
+            {"gen_id": input.gen_id, "user_id": user["user_id"]},
+            {"_id": 0, "title": 1, "prompt": 1})
+        if gen:
+            project_ctx = (
+                f"\nThe user's current project: \"{gen['title']}\" — {gen['prompt'][:200]}.")
+    persona = (
+        BOT_PERSONAS[bot]
+        + " Reply in 1-3 short sentences, in character, in English. Be concrete and warm."
+        + project_ctx
+    )
+    prompt_text = (context_lines + "\n" if context_lines else "") + f"User: {message}"
+    reply = "Give me a second — my circuits hiccuped. Ask me again?"
+    try:
+        chat = LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=f"dm_{user['user_id']}_{bot}_{uuid.uuid4().hex[:8]}",
+            system_message=persona,
+        ).with_model("openai", "gpt-5.4-mini")
+        chunks = []
+        async for ev in chat.stream_message(UserMessage(text=prompt_text)):
+            if isinstance(ev, TextDelta):
+                chunks.append(ev.content)
+            elif isinstance(ev, StreamDone):
+                break
+        text = "".join(chunks).strip()
+        if text:
+            reply = text[:600]
+    except Exception as e:
+        logger.error(f"Bot chat failed for {bot}: {e}")
+    now = datetime.now(timezone.utc)
+    await db.bot_chats.update_one(
+        {"user_id": user["user_id"], "bot": bot},
+        {
+            "$push": {"messages": {"$each": [
+                {"role": "user", "text": message, "created_at": now},
+                {"role": "bot", "text": reply, "created_at": now},
+            ]}},
+            "$set": {"updated_at": now},
+        },
+        upsert=True,
+    )
+    return {"reply": reply}
+
+
+def slugify(text: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return (s or "site")[:28]
+
+
+@api_router.post("/generations/{gen_id}/publish")
+async def publish_generation(gen_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.generations.find_one({"gen_id": gen_id, "user_id": user["user_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    slug = doc.get("slug")
+    if not slug:
+        for _ in range(5):
+            candidate = f"{slugify(doc['title'])}-{uuid.uuid4().hex[:4]}"
+            if not await db.generations.find_one({"slug": candidate}):
+                slug = candidate
+                break
+    await db.generations.update_one(
+        {"gen_id": gen_id}, {"$set": {"published": True, "slug": slug}})
+    return {"status": "ok", "slug": slug, "path": f"/p/{slug}"}
+
+
+@api_router.post("/generations/{gen_id}/unpublish")
+async def unpublish_generation(gen_id: str, user: dict = Depends(get_current_user)):
+    res = await db.generations.update_one(
+        {"gen_id": gen_id, "user_id": user["user_id"]}, {"$set": {"published": False}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    return {"status": "ok"}
+
+
+@api_router.get("/p/{slug}")
+async def public_page(slug: str):
+    doc = await db.generations.find_one({"slug": slug, "published": True}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="This page is not published")
+    versions = doc.get("versions") or []
+    if versions:
+        idx = doc.get("current_version", len(versions) - 1)
+        idx = max(0, min(idx, len(versions) - 1))
+        html = versions[idx]["html"]
+    else:
+        html = doc["html"]
+    return HTMLResponse(html, headers={"X-Robots-Tag": "noindex"})
+
+
+class IntegrationIn(BaseModel):
+    add: str
+
+
+@api_router.post("/generations/{gen_id}/integrations")
+async def add_integration(gen_id: str, input: IntegrationIn, user: dict = Depends(get_current_user)):
+    if input.add not in {"email", "google"}:
+        raise HTTPException(status_code=400, detail="Unknown integration")
+    res = await db.generations.update_one(
+        {"gen_id": gen_id, "user_id": user["user_id"]},
+        {"$addToSet": {"integrations": input.add}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    doc = await db.generations.find_one({"gen_id": gen_id}, {"_id": 0, "integrations": 1})
+    return {"integrations": doc.get("integrations", [])}
+
+
+@api_router.get("/generations/{gen_id}/package")
+async def download_package(gen_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.generations.find_one({"gen_id": gen_id, "user_id": user["user_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    name = slugify(doc["title"])
+    app_id = f"ai.idealand.{re.sub(r'[^a-z0-9]', '', name) or 'app'}{gen_id[-4:]}"
+    readme = (
+        f"# {doc['title']} — Mobile App Package\n\n"
+        "Your generated app, wrapped for native builds with Capacitor.\n\n"
+        "## Build locally\n"
+        "1. npm install\n"
+        "2. npx cap add android   (requires Android Studio)\n"
+        "3. npx cap add ios       (requires macOS + Xcode)\n"
+        "4. npm run sync\n"
+        "5. npm run android  or  npm run ios\n\n"
+        "## Store submission\n"
+        "- Google Play: build a signed AAB in Android Studio (Build > Generate Signed Bundle)\n"
+        "  and upload it in Google Play Console with your own developer account.\n"
+        "- App Store: archive in Xcode and upload via App Store Connect with your own\n"
+        "  Apple Developer account.\n"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("www/index.html", doc["html"])
+        z.writestr("capacitor.config.json", json.dumps({
+            "appId": app_id,
+            "appName": doc["title"],
+            "webDir": "www",
+            "backgroundColor": "#F0F9FF",
+        }, indent=2))
+        z.writestr("package.json", json.dumps({
+            "name": name or "app",
+            "version": "1.0.0",
+            "private": True,
+            "scripts": {"sync": "cap sync", "android": "cap open android", "ios": "cap open ios"},
+            "dependencies": {
+                "@capacitor/core": "^7.0.0",
+                "@capacitor/android": "^7.0.0",
+                "@capacitor/ios": "^7.0.0",
+            },
+            "devDependencies": {"@capacitor/cli": "^7.0.0"},
+        }, indent=2))
+        z.writestr("README.md", readme)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name or "app"}-mobile.zip"'},
+    )
 
 
 # ---------- Waitlist ----------

@@ -15,6 +15,7 @@ import WelcomeTour from "@/components/WelcomeTour";
 import ProjectsSection from "@/components/ProjectsSection";
 import StudioPage from "@/components/StudioPage";
 import ResetPassword from "@/components/ResetPassword";
+import PublishPage from "@/components/PublishPage";
 import { uploadFiles } from "@/utils/uploads";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -183,6 +184,7 @@ const AppShell = () => {
       <Route path="/" element={<Home user={user} setUser={setUser} />} />
       <Route path="/studio" element={<StudioPage user={user} />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/p/:slug" element={<PublishPage />} />
     </Routes>
   );
 };

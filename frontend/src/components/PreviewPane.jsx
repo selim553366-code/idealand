@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ExternalLink, History, Loader2, PanelRightClose, PanelRightOpen, RotateCw } from "lucide-react";
+import {
+  Check, Copy, ExternalLink, Globe, History, Loader2,
+  PanelRightClose, PanelRightOpen, Rocket, RotateCw, Smartphone,
+} from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.22, 1, 0.36, 1];
@@ -12,7 +15,92 @@ const STEP_LABELS = {
   polishing: "Polishing the pixels…",
 };
 
-const PreviewPane = ({ current, working, step, tick, open, onToggle, onRevert, reverting }) => {
+const PublishBar = ({ current, publishing, onPublish, onUnpublish }) => {
+  const [copied, setCopied] = useState(false);
+  const url = current?.slug ? `${window.location.origin}/p/${current.slug}` : "";
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {}
+  };
+
+  return (
+    <AnimatePresence>
+      {current?.published && current?.slug && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.4, ease: EASE }}
+          className="mb-2 overflow-hidden"
+          data-testid="publish-bar"
+        >
+          <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 px-3.5 py-3">
+            <div className="flex items-center gap-2">
+              <Globe size={14} className="shrink-0 text-emerald-600" />
+              <input
+                readOnly
+                value={url}
+                data-testid="publish-link-input"
+                onFocus={(e) => e.target.select()}
+                className="min-w-0 flex-1 rounded-full border border-emerald-200 bg-white/80 px-3 py-1.5 font-mono text-[11px] text-emerald-800 outline-none"
+              />
+              <button
+                data-testid="publish-copy-button"
+                onClick={copy}
+                aria-label="Copy link"
+                className="prompt-chip !rounded-lg !p-1.5"
+              >
+                {copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+              </button>
+              <button
+                data-testid="publish-open-button"
+                onClick={() => window.open(url, "_blank")}
+                aria-label="Open published site"
+                className="prompt-chip !rounded-lg !p-1.5"
+              >
+                <ExternalLink size={13} />
+              </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <button
+                data-testid="unpublish-button"
+                onClick={onUnpublish}
+                className="text-[11px] font-medium text-slate-400 transition-colors hover:text-rose-500"
+              >
+                Unpublish
+              </button>
+              {current?.project_type === "app" && (
+                <button
+                  data-testid="app-package-button"
+                  onClick={() => window.open(`${API}/generations/${current.gen_id}/package`, "_blank")}
+                  className="btn-skeuo !rounded-xl !px-3 !py-1.5 !text-[11px]"
+                >
+                  <Smartphone size={12} className="text-sky-600" />
+                  Store package (Android/iOS)
+                </button>
+              )}
+            </div>
+            {current?.project_type === "app" && (
+              <p className="mt-1.5 text-[10px] leading-snug text-slate-400">
+                Capacitor project zip — build with Android Studio / Xcode; store upload uses your own
+                Google Play & Apple Developer accounts.
+              </p>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+const PreviewPane = ({
+  current, working, step, tick, open, onToggle,
+  onRevert, reverting, onPublish, onUnpublish, publishing,
+}) => {
   const [frameKey, setFrameKey] = useState(0);
   const src = current ? `${API}/generations/${current.gen_id}/html` : null;
   const updating = working && !!current;
@@ -74,6 +162,21 @@ const PreviewPane = ({ current, working, step, tick, open, onToggle, onRevert, r
             {current && (
               <span className="flex gap-1.5">
                 <button
+                  data-testid="publish-button"
+                  onClick={onPublish}
+                  disabled={publishing}
+                  className={`shrink-0 !rounded-lg !px-3 !py-1.5 !text-[11px] ${
+                    current.published ? "btn-skeuo !text-emerald-700" : "btn-skeuo-primary"
+                  }`}
+                >
+                  {publishing ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Rocket size={12} />
+                  )}
+                  {current.published ? "Live" : "Publish"}
+                </button>
+                <button
                   data-testid="preview-refresh-button"
                   onClick={() => setFrameKey((k) => k + 1)}
                   aria-label="Reload preview"
@@ -92,6 +195,13 @@ const PreviewPane = ({ current, working, step, tick, open, onToggle, onRevert, r
               </span>
             )}
           </div>
+
+          <PublishBar
+            current={current}
+            publishing={publishing}
+            onPublish={onPublish}
+            onUnpublish={onUnpublish}
+          />
 
           {versions.length > 1 && (
             <div className="mb-2 flex items-center gap-1.5 overflow-x-auto px-1" data-testid="version-chips">
