@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowUp, Check, Clapperboard, Code2, Hammer, History, Loader2,
-  Megaphone, Palette, Users, Wallet,
+  ArrowUp, Check, CheckCircle2, Clapperboard, Code2, Hammer, History,
+  Lightbulb, Loader2, Megaphone, Palette, X,
 } from "lucide-react";
+import axios from "axios";
 import ChatExtras from "@/components/ChatExtras";
 
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const EASE = [0.22, 1, 0.36, 1];
 
 const ROBOTS = {
-  brand: { name: "Brand Bot", c1: "#38BDF8", c2: "#2563EB", antenna: "ball", eyes: "round" },
-  customer: { name: "Customer Insight", c1: "#22D3EE", c2: "#0F766E", antenna: "ring", eyes: "visor" },
-  marketing: { name: "Ad Marketing", c1: "#818CF8", c2: "#4F46E5", antenna: "star", eyes: "wink" },
-  finance: { name: "Financial Bot", c1: "#34D399", c2: "#047857", antenna: "coin", eyes: "square" },
-  developer: { name: "Developer Bot", c1: "#0EA5E9", c2: "#1E293B", antenna: "bolt", eyes: "glasses" },
-  video: { name: "Ad Video Bot", c1: "#A78BFA", c2: "#0369A1", antenna: "play", eyes: "visor" },
+  brand: { name: "Brand Bot", c1: "#38BDF8", c2: "#2563EB", antenna: "ball", eyes: "round", role: "Identity, naming & look" },
+  customer: { name: "Customer Insight", c1: "#22D3EE", c2: "#0F766E", antenna: "ring", eyes: "visor", role: "Audience & needs" },
+  marketing: { name: "Ad Marketing", c1: "#818CF8", c2: "#4F46E5", antenna: "star", eyes: "wink", role: "Ad angles & growth" },
+  finance: { name: "Financial Bot", c1: "#34D399", c2: "#047857", antenna: "coin", eyes: "square", role: "Pricing & budget" },
+  developer: { name: "Developer Bot", c1: "#0EA5E9", c2: "#1E293B", antenna: "bolt", eyes: "glasses", role: "Architecture & code" },
+  video: { name: "Ad Video Bot", c1: "#A78BFA", c2: "#0369A1", antenna: "play", eyes: "visor", role: "Video ad concepts" },
 };
 
 const AntennaTip = ({ type, c2 }) => {
@@ -128,47 +130,111 @@ const BotAvatar = ({ bot, size = 8 }) => {
 };
 
 const EmptyArt = () => (
-  <div className="relative mb-5 h-24 w-44" aria-hidden="true">
-    <motion.div
-      animate={{ y: [0, -10, 0], rotate: [0, 8, 0] }}
-      transition={{ duration: 4.2, repeat: Infinity, ease: "easeInOut" }}
-      className="absolute left-1 top-4 h-12 w-12 rounded-full bg-[radial-gradient(circle_at_35%_35%,#BAE6FD,#0EA5E9_60%,#0369A1)] shadow-[0_14px_28px_-8px_rgba(14,165,233,0.5),inset_0_3px_6px_rgba(255,255,255,0.7)]"
-    />
-    <motion.div
-      animate={{ y: [0, -14, 0], rotate: [0, -12, 0] }}
-      transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-      className="absolute left-[62px] top-0 h-10 w-10 rounded-2xl bg-[radial-gradient(circle_at_35%_35%,#A5F3FC,#06B6D4_65%,#0E7490)] shadow-[0_12px_24px_-6px_rgba(6,182,212,0.5),inset_0_2px_4px_rgba(255,255,255,0.7)]"
-    />
-    <motion.div
-      animate={{ y: [0, -8, 0], rotate: [0, 6, 0] }}
-      transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut", delay: 0.9 }}
-      className="absolute right-6 top-10 h-8 w-8 rounded-full border-4 border-sky-300/80 shadow-[0_8px_16px_-4px_rgba(14,165,233,0.35)]"
-    />
-    <motion.div
-      animate={{ y: [0, -12, 0] }}
-      transition={{ duration: 4.6, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}
-      className="glass-card absolute right-0 top-0 flex h-9 w-9 items-center justify-center !rounded-xl text-sky-600"
-    >
-      <Wand2Icon />
-    </motion.div>
-    <motion.div
-      animate={{ y: [0, -9, 0] }}
-      transition={{ duration: 3.9, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
-      className="glass-card absolute left-9 top-14 flex h-9 w-9 items-center justify-center !rounded-xl text-cyan-600"
-    >
-      <Code2 size={15} />
-    </motion.div>
-    <motion.div
-      animate={{ y: [0, -7, 0] }}
-      transition={{ duration: 4.4, repeat: Infinity, ease: "easeInOut", delay: 0.7 }}
-      className="glass-card absolute right-14 top-16 flex h-8 w-8 items-center justify-center !rounded-lg text-sky-500"
-    >
-      <Megaphone size={13} />
-    </motion.div>
+  <div className="relative mb-5 flex h-24 items-end justify-center gap-2" aria-hidden="true">
+    {Object.keys(ROBOTS).map((id, i) => (
+      <motion.span
+        key={id}
+        animate={{ y: [0, -8, 0] }}
+        transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut", delay: i * 0.35 }}
+      >
+        <BotAvatar bot={id} size={i === 2 || i === 3 ? 11 : 9} />
+      </motion.span>
+    ))}
   </div>
 );
 
-const Wand2Icon = () => <Palette size={15} />;
+const TypingBubble = ({ bot }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0 }}
+    className="flex items-end gap-2.5"
+    data-testid="agent-typing"
+  >
+    {bot && <BotAvatar bot={bot} size={7} />}
+    <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-white/80 bg-white/80 px-4 py-3 shadow-[0_8px_18px_-8px_rgba(14,165,233,0.25)]">
+      {[0, 1, 2].map((i) => (
+        <span key={i} className="typing-dot inline-block h-1.5 w-1.5 rounded-full bg-sky-500" style={{ animationDelay: `${i * 0.18}s` }} />
+      ))}
+    </div>
+  </motion.div>
+);
+
+const PortfolioModal = ({ bot, onClose }) => {
+  const [items, setItems] = useState(null);
+  const meta = ROBOTS[bot];
+
+  useEffect(() => {
+    let live = true;
+    axios
+      .get(`${API}/agent/portfolio/${bot}`, { withCredentials: true })
+      .then((r) => live && setItems(r.data.items))
+      .catch(() => live && setItems([]));
+    return () => {
+      live = false;
+    };
+  }, [bot]);
+
+  return (
+    <motion.div
+      data-testid="portfolio-modal"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[65] flex items-center justify-center bg-sky-950/25 p-4 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 36, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.96 }}
+        transition={{ duration: 0.45, ease: EASE }}
+        onClick={(e) => e.stopPropagation()}
+        className="glass-card flex max-h-[75vh] w-full max-w-md flex-col !bg-white/90 p-6"
+      >
+        <div className="mb-4 flex items-center gap-3.5">
+          <BotAvatar bot={bot} size={12} />
+          <div className="min-w-0 flex-1">
+            <h3 className="font-display text-lg font-bold text-slate-900">{meta.name}</h3>
+            <p className="text-xs text-slate-500">{meta.role}</p>
+          </div>
+          <button data-testid="portfolio-close-button" onClick={onClose} aria-label="Close" className="prompt-chip !rounded-full !p-2">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1" data-testid="portfolio-items">
+          {items === null ? (
+            <>
+              <div className="shimmer h-12 rounded-xl" />
+              <div className="shimmer h-12 rounded-xl" />
+              <div className="shimmer h-12 w-4/5 rounded-xl" />
+            </>
+          ) : items.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-500">
+              No notes in my portfolio yet — start a project and I'll weigh in.
+            </p>
+          ) : (
+            items.map((it, i) => (
+              <div key={i} className="flex gap-2.5 rounded-xl border border-white/70 bg-white/70 px-3.5 py-2.5" data-testid={`portfolio-item-${i}`}>
+                <span className="mt-0.5 shrink-0 text-sky-500">
+                  {it.type === "suggestion" ? <Lightbulb size={14} /> : <Megaphone size={14} />}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs leading-relaxed text-slate-700">{it.text}</p>
+                  {it.project && (
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-sky-700/60">
+                      {it.project}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
 
 const STEP_SETS = {
   create: [
@@ -206,11 +272,7 @@ const WorkingCard = ({ step, mode }) => {
         </span>
         <span className="ml-1 flex gap-1">
           {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="typing-dot inline-block h-1.5 w-1.5 rounded-full bg-sky-500"
-              style={{ animationDelay: `${i * 0.18}s` }}
-            />
+            <span key={i} className="typing-dot inline-block h-1.5 w-1.5 rounded-full bg-sky-500" style={{ animationDelay: `${i * 0.18}s` }} />
           ))}
         </span>
       </div>
@@ -222,24 +284,12 @@ const WorkingCard = ({ step, mode }) => {
             <div key={s.id} className="flex items-center gap-2.5" data-testid={`agent-step-${s.id}`}>
               <span
                 className={`flex h-5 w-5 items-center justify-center rounded-full border transition-all duration-500 ${
-                  done
-                    ? "border-sky-400 bg-sky-500 text-white"
-                    : active
-                      ? "border-sky-300 bg-white/80"
-                      : "border-sky-100 bg-white/40"
+                  done ? "border-sky-400 bg-sky-500 text-white" : active ? "border-sky-300 bg-white/80" : "border-sky-100 bg-white/40"
                 }`}
               >
-                {done ? (
-                  <Check size={11} strokeWidth={3} />
-                ) : active ? (
-                  <span className="typing-dot h-1.5 w-1.5 rounded-full bg-sky-500" />
-                ) : null}
+                {done ? <Check size={11} strokeWidth={3} /> : active ? <span className="typing-dot h-1.5 w-1.5 rounded-full bg-sky-500" /> : null}
               </span>
-              <span
-                className={`text-sm transition-colors duration-500 ${
-                  done ? "text-slate-400 line-through" : active ? "font-semibold text-slate-800" : "text-slate-400"
-                }`}
-              >
+              <span className={`text-sm transition-colors duration-500 ${done ? "text-slate-400 line-through" : active ? "font-semibold text-slate-800" : "text-slate-400"}`}>
                 {s.label}
               </span>
             </div>
@@ -260,9 +310,7 @@ const PlanCard = ({ plan, active, onBuild }) => (
     className="glass-card p-4"
     data-testid="agent-plan-card"
   >
-    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">
-      Team plan
-    </p>
+    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">Team decision</p>
     <p className="text-sm leading-relaxed text-slate-700">{plan.summary}</p>
     {plan.video && (
       <p className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-indigo-600">
@@ -272,22 +320,12 @@ const PlanCard = ({ plan, active, onBuild }) => (
     )}
     {active && (
       <div className="mt-4 flex flex-wrap gap-2.5">
-        <button
-          type="button"
-          data-testid="plan-build-button"
-          onClick={() => onBuild(false)}
-          className="btn-skeuo-primary !py-2.5 text-sm"
-        >
+        <button type="button" data-testid="plan-build-button" onClick={() => onBuild(false)} className="btn-skeuo-primary !py-2.5 text-sm">
           <Hammer size={14} />
           Build it
         </button>
         {plan.video && (
-          <button
-            type="button"
-            data-testid="plan-build-video-button"
-            onClick={() => onBuild(true)}
-            className="btn-skeuo !py-2.5 text-sm"
-          >
+          <button type="button" data-testid="plan-build-video-button" onClick={() => onBuild(true)} className="btn-skeuo !py-2.5 text-sm">
             <Clapperboard size={14} className="text-indigo-500" />
             Build + video ad
           </button>
@@ -308,18 +346,14 @@ const VideoCard = ({ data }) => (
     <div className="mb-3 flex items-center gap-2">
       <BotAvatar bot="video" size={6} />
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">
-          Ad Video Bot · Storyboard
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">Ad Video Bot · Storyboard</p>
         <p className="font-display text-sm font-bold text-slate-900">{data.title}</p>
       </div>
     </div>
     <div className="space-y-2">
       {(data.scenes || []).map((s, i) => (
         <div key={i} className="flex gap-2.5 rounded-xl border border-white/70 bg-white/60 px-3 py-2">
-          <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-700">
-            {s.seconds}s
-          </span>
+          <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-sky-700">{s.seconds}s</span>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-slate-700">{s.visual}</p>
             <p className="text-[11px] italic text-slate-500">“{s.line}”</p>
@@ -335,24 +369,39 @@ const VideoCard = ({ data }) => (
   </motion.div>
 );
 
-const TypingBubble = ({ bot }) => (
+const SummaryCard = ({ did, suggestions, onSuggest }) => (
   <motion.div
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0 }}
-    className="flex items-end gap-2.5"
-    data-testid="agent-typing"
+    initial={{ opacity: 0, y: 14, scale: 0.97 }}
+    animate={{ opacity: 1, y: 0, scale: 1 }}
+    transition={{ duration: 0.45, ease: EASE }}
+    className="glass-card p-4"
+    data-testid="summary-card"
   >
-    {bot && <BotAvatar bot={bot} size={7} />}
-    <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-white/80 bg-white/80 px-4 py-3 shadow-[0_8px_18px_-8px_rgba(14,165,233,0.25)]">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="typing-dot inline-block h-1.5 w-1.5 rounded-full bg-sky-500"
-          style={{ animationDelay: `${i * 0.18}s` }}
-        />
-      ))}
-    </div>
+    <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-sky-800/80">
+      <CheckCircle2 size={13} className="text-emerald-500" />
+      Build report
+    </p>
+    <p className="text-sm leading-relaxed text-slate-700">{did}</p>
+    {suggestions?.length > 0 && (
+      <div className="mt-3">
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">What's next</p>
+        <div className="space-y-2">
+          {suggestions.map((s, i) => (
+            <button
+              key={i}
+              type="button"
+              data-testid={`suggestion-${s.bot}`}
+              onClick={() => onSuggest(s.text)}
+              className="prompt-chip flex w-full items-center gap-2 !rounded-xl !px-3 !py-2 text-left !text-xs"
+            >
+              <BotAvatar bot={s.bot} size={5} />
+              <span className="min-w-0 flex-1">{s.text}</span>
+              <ArrowUp size={11} className="shrink-0 text-sky-500" />
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
   </motion.div>
 );
 
@@ -360,6 +409,7 @@ const AgentPanel = ({
   messages,
   working,
   asking,
+  activeBot,
   step,
   mode,
   fullWidth,
@@ -376,9 +426,9 @@ const AgentPanel = ({
   onTypeChange,
 }) => {
   const [value, setValue] = useState("");
+  const [portfolio, setPortfolio] = useState(null);
   const scrollRef = useRef(null);
   const busy = working || asking;
-  const lastBotMsg = [...messages].reverse().find((m) => m.role === "bot");
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -402,20 +452,12 @@ const AgentPanel = ({
       <div className="mb-3 flex items-center justify-between px-1">
         <div className="flex items-center gap-2.5">
           <span className="relative flex h-2.5 w-2.5">
-            <span
-              className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${
-                busy ? "bg-sky-400" : "bg-emerald-400"
-              }`}
-            />
-            <span
-              className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
-                busy ? "bg-sky-500" : "bg-emerald-500"
-              }`}
-            />
+            <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 ${busy ? "bg-sky-400" : "bg-emerald-400"}`} />
+            <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${busy ? "bg-sky-500" : "bg-emerald-500"}`} />
           </span>
           <h2 className="font-display text-base font-bold text-slate-900">Bot Team</h2>
           <span className="text-[11px] font-medium text-slate-400" data-testid="agent-status">
-            {working ? "crafting…" : asking ? "discussing…" : "online"}
+            {working ? "crafting…" : asking ? "deliberating…" : "online"}
           </span>
         </div>
         {gens.length > 0 && (
@@ -426,6 +468,21 @@ const AgentPanel = ({
         )}
       </div>
 
+      <div className="mb-3 flex items-center gap-2 overflow-x-auto px-1 pb-1" data-testid="team-bar">
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Team</span>
+        {Object.keys(ROBOTS).map((id) => (
+          <button
+            key={id}
+            data-testid={`team-robot-${id}`}
+            onClick={() => setPortfolio(id)}
+            title={`${ROBOTS[id].name} — ${ROBOTS[id].role}`}
+            className="shrink-0 rounded-2xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_16px_-6px_rgba(14,165,233,0.45)]"
+          >
+            <BotAvatar bot={id} size={7} />
+          </button>
+        ))}
+      </div>
+
       {gens.length > 0 && (
         <div className="mb-3 flex gap-2 overflow-x-auto pb-1" data-testid="agent-history">
           {gens.map((g) => (
@@ -433,9 +490,7 @@ const AgentPanel = ({
               key={g.gen_id}
               data-testid={`agent-history-${g.gen_id}`}
               onClick={() => onSelect(g)}
-              className={`prompt-chip shrink-0 !px-3 !py-1.5 !text-[11px] ${
-                currentId === g.gen_id ? "chat-bar-glow !bg-white" : ""
-              }`}
+              className={`prompt-chip shrink-0 !px-3 !py-1.5 !text-[11px] ${currentId === g.gen_id ? "chat-bar-glow !bg-white" : ""}`}
             >
               {g.title}
             </button>
@@ -448,7 +503,7 @@ const AgentPanel = ({
           <div className="flex h-full flex-col items-center justify-center text-center" data-testid="agent-empty">
             <EmptyArt />
             <p className="max-w-[280px] text-sm font-medium text-slate-600">
-              Describe an idea — the bot team will discuss it, share a plan, then build it live.
+              Describe an idea — the team deliberates out loud, decides together, then builds it live.
             </p>
           </div>
         )}
@@ -460,6 +515,9 @@ const AgentPanel = ({
           }
           if (m.role === "video") {
             return <VideoCard key={i} data={m.data} />;
+          }
+          if (m.role === "summary") {
+            return <SummaryCard key={i} did={m.did} suggestions={m.suggestions} onSuggest={onSubmit} />;
           }
           if (m.role === "bot") {
             const meta = ROBOTS[m.bot] || ROBOTS.developer;
@@ -510,7 +568,7 @@ const AgentPanel = ({
           );
         })}
 
-        <AnimatePresence>{asking && <TypingBubble bot={lastBotMsg?.bot} />}</AnimatePresence>
+        <AnimatePresence>{asking && <TypingBubble bot={activeBot} />}</AnimatePresence>
         <AnimatePresence>{working && <WorkingCard step={step} mode={mode} />}</AnimatePresence>
       </div>
 
@@ -556,6 +614,10 @@ const AgentPanel = ({
           {working ? <Loader2 size={15} className="animate-spin" /> : <ArrowUp size={15} strokeWidth={2.6} />}
         </button>
       </form>
+
+      <AnimatePresence>
+        {portfolio && <PortfolioModal bot={portfolio} onClose={() => setPortfolio(null)} />}
+      </AnimatePresence>
     </section>
   );
 };

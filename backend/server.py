@@ -714,6 +714,45 @@ async def upload_file(request: Request, user: dict = Depends(get_current_user)):
             "content_type": file.content_type or "application/octet-stream"}
 
 
+SUMMARY_SYSTEM = (
+    "You write brief build reports for idealand.ai. Given the user's request and whether it was a new "
+    "build or an edit, output ONLY JSON, no markdown: {\"did\":\"1-2 short past-tense sentences about "
+    "what was delivered\",\"suggestions\":[{\"bot\":\"brand|customer|marketing|finance|developer|video\","
+    "\"text\":\"next step, max 12 words\"}]}. Include 1 or 2 suggestions, only from the bots most "
+    "relevant to what should happen next."
+)
+
+VALID_BOTS = {"brand", "customer", "marketing", "finance", "developer", "video"}
+
+
+async def build_report(request_text: str, kind: str) -> dict:
+    fallback = {"did": "Your creation is live in the preview.", "suggestions": []}
+    try:
+        chat = LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=f"s_{uuid.uuid4().hex[:10]}",
+            system_message=SUMMARY_SYSTEM,
+        ).with_model("openai", "gpt-5.4-mini")
+        chunks = []
+        async for ev in chat.stream_message(UserMessage(text=f"{kind}: {request_text}")):
+            if isinstance(ev, TextDelta):
+                chunks.append(ev.content)
+            elif isinstance(ev, StreamDone):
+                break
+        match = re.search(r"\{.*\}", "".join(chunks), re.S)
+        parsed = json.loads(match.group(0)) if match else {}
+        did = str(parsed.get("did", ""))[:400] or fallback["did"]
+        suggestions = [
+            {"bot": s["bot"], "text": str(s["text"])[:120]}
+            for s in parsed.get("suggestions", [])
+            if isinstance(s, dict) and s.get("bot") in VALID_BOTS and s.get("text")
+        ][:2]
+        return {"did": did, "suggestions": suggestions}
+    except Exception as e:
+        logger.error(f"Build report failed: {e}")
+        return fallback
+
+
 @api_router.post("/generate")
 async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
     prompt = input.prompt.strip()
@@ -782,6 +821,9 @@ async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
             if not html:
                 raise ValueError("empty generation")
             now = datetime.now(timezone.utc)
+            report = await build_report(prompt, "Edit to an existing product" if existing else "New build")
+            summary_msg = {"role": "summary", "did": report["did"],
+                           "suggestions": report["suggestions"], "created_at": now}
             if existing:
                 versions = existing.get("versions") or [{
                     "html": existing["html"],
@@ -798,6 +840,7 @@ async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
                         "$push": {"messages": {"$each": [
                             {"role": "user", "text": prompt, "created_at": now},
                             {"role": "agent", "text": f"Updated “{title}” — your change is live.", "created_at": now},
+                            summary_msg,
                         ]}},
                     },
                 )
@@ -814,10 +857,11 @@ async def generate(input: GenerateIn, user: dict = Depends(get_current_user)):
                     "messages": [
                         {"role": "user", "text": prompt, "created_at": now},
                         {"role": "agent", "text": f"Created “{title}” — it's live in the preview.", "created_at": now},
+                        summary_msg,
                     ],
                     "created_at": now,
                 })
-            yield sse({"type": "done", "gen_id": gen_id, "title": title})
+            yield sse({"type": "done", "gen_id": gen_id, "title": title, "report": report})
         except Exception as e:
             logger.error(f"Generation failed for {user['user_id']}: {e}")
             yield sse({"type": "error", "detail": "Generation failed. Please try again."})
@@ -882,6 +926,59 @@ async def revert_generation(gen_id: str, input: RevertIn, user: dict = Depends(g
         {"$set": {"current_version": input.version, "html": target["html"], "title": target["title"]}},
     )
     return {"status": "ok", "version": input.version, "title": target["title"]}
+
+
+class DiscussionIn(BaseModel):
+    messages: list
+
+
+@api_router.post("/generations/{gen_id}/discussion")
+async def save_discussion(gen_id: str, input: DiscussionIn, user: dict = Depends(get_current_user)):
+    doc = await db.generations.find_one({"gen_id": gen_id, "user_id": user["user_id"]}, {"_id": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    now = datetime.now(timezone.utc)
+    clean = [
+        {"bot": m.get("bot"), "text": str(m.get("text", ""))[:280], "created_at": now}
+        for m in input.messages
+        if isinstance(m, dict) and m.get("bot") in VALID_BOTS and m.get("text")
+    ][:12]
+    if clean:
+        await db.generations.update_one({"gen_id": gen_id}, {"$push": {"discussion": {"$each": clean}}})
+    return {"status": "ok", "saved": len(clean)}
+
+
+@api_router.get("/agent/portfolio/{bot}")
+async def agent_portfolio(bot: str, user: dict = Depends(get_current_user)):
+    if bot not in VALID_BOTS:
+        raise HTTPException(status_code=404, detail="Unknown bot")
+    docs = await db.generations.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "gen_id": 1, "title": 1, "discussion": 1, "messages": 1, "created_at": 1},
+    ).sort("created_at", -1).to_list(50)
+    items = []
+    for d in docs:
+        for m in d.get("discussion") or []:
+            if m.get("bot") == bot:
+                items.append({
+                    "type": "note",
+                    "text": m["text"],
+                    "project": d.get("title"),
+                    "gen_id": d["gen_id"],
+                    "created_at": m.get("created_at") or d.get("created_at"),
+                })
+        for m in d.get("messages") or []:
+            if m.get("role") == "summary":
+                for s in m.get("suggestions") or []:
+                    if s.get("bot") == bot:
+                        items.append({
+                            "type": "suggestion",
+                            "text": s["text"],
+                            "project": d.get("title"),
+                            "gen_id": d["gen_id"],
+                            "created_at": m.get("created_at"),
+                        })
+    return {"bot": bot, "items": items[:40]}
 
 
 # ---------- Waitlist ----------

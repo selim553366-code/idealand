@@ -39,12 +39,14 @@ const StudioPage = ({ user }) => {
   const [previewOpen, setPreviewOpen] = useState(true);
   const [messages, setMessages] = useState([]);
   const [asking, setAsking] = useState(false);
+  const [activeBot, setActiveBot] = useState(null);
   const [tick, setTick] = useState(0);
   const [reverting, setReverting] = useState(false);
   const [uploads, setUploads] = useState([]);
   const [projectType, setProjectType] = useState("website");
   const autoStarted = useRef(false);
   const draftRef = useRef({ upload_ids: [], project_type: "website" });
+  const discussionRef = useRef([]);
 
   useEffect(() => {
     draftRef.current = {
@@ -101,6 +103,52 @@ const StudioPage = ({ user }) => {
     return data;
   };
 
+  const runDiscussion = async (text, isChange) => {
+    setAsking(true);
+    setActiveBot(null);
+    discussionRef.current = [];
+    try {
+      const res = await fetch(`${API}/agent/discuss`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          prompt: isChange ? `Change request for an existing product: ${text}` : text,
+          project_type: draftRef.current.project_type,
+          upload_ids: draftRef.current.upload_ids,
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error("discussion failed");
+      let plan = null;
+      await readSSE(res, (ev) => {
+        if (ev.type === "bot") {
+          setActiveBot(ev.bot);
+          discussionRef.current.push({ bot: ev.bot, text: ev.text });
+          setMessages((m) => [...m, { role: "bot", bot: ev.bot, text: ev.text }]);
+        } else if (ev.type === "plan") {
+          plan = ev;
+        } else if (ev.type === "error") {
+          throw new Error("discussion failed");
+        }
+      });
+      return plan;
+    } catch {
+      return null;
+    } finally {
+      setAsking(false);
+      setActiveBot(null);
+    }
+  };
+
+  const saveDiscussion = async (genId) => {
+    const msgs = discussionRef.current;
+    discussionRef.current = [];
+    if (!msgs.length || !genId) return;
+    try {
+      await axios.post(`${API}/generations/${genId}/discussion`, { messages: msgs }, { withCredentials: true });
+    } catch {}
+  };
+
   const runGeneration = async (text, { genId = null, context = null, withVideo = false } = {}) => {
     setWorking(true);
     setMode(genId ? "edit" : "create");
@@ -144,10 +192,17 @@ const StudioPage = ({ user }) => {
           role: "agent",
           text: genId
             ? `Updated “${doneData.title}” — saved as version ${(meta?.current_version ?? 0) + 1}.`
-            : `Done — “${doneData.title}” is live in the preview. Ask me to tweak anything.`,
+            : `“${doneData.title}” is live in the preview.`,
         },
       ]);
+      if (doneData.report) {
+        setMessages((m) => [
+          ...m,
+          { role: "summary", did: doneData.report.did, suggestions: doneData.report.suggestions },
+        ]);
+      }
       setPreviewOpen(true);
+      saveDiscussion(doneData.gen_id);
 
       if (withVideo) {
         setMessages((m) => [
@@ -185,40 +240,18 @@ const StudioPage = ({ user }) => {
     if (!clean || working || asking) return;
     setMessages((m) => [...m, { role: "user", text: clean }]);
     if (current) {
-      await runGeneration(clean, { genId: current.gen_id });
+      const plan = await runDiscussion(clean, true);
+      await runGeneration(clean, { genId: current.gen_id, context: plan?.summary || null });
       return;
     }
-    setAsking(true);
-    try {
-      const res = await fetch(`${API}/agent/discuss`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          prompt: clean,
-          project_type: draftRef.current.project_type,
-          upload_ids: draftRef.current.upload_ids,
-        }),
-      });
-      if (!res.ok || !res.body) throw new Error("discussion failed");
-      let plan = null;
-      await readSSE(res, (ev) => {
-        if (ev.type === "bot") setMessages((m) => [...m, { role: "bot", bot: ev.bot, text: ev.text }]);
-        else if (ev.type === "plan") plan = ev;
-        else if (ev.type === "error") throw new Error("discussion failed");
-      });
-      if (plan) {
-        setMessages((m) => [
-          ...m,
-          { role: "plan", summary: plan.summary, video: plan.video_proposed, prompt: clean },
-        ]);
-      } else {
-        await runGeneration(clean);
-      }
-    } catch {
+    const plan = await runDiscussion(clean, false);
+    if (plan) {
+      setMessages((m) => [
+        ...m,
+        { role: "plan", summary: plan.summary, video: plan.video_proposed, prompt: clean },
+      ]);
+    } else {
       await runGeneration(clean);
-    } finally {
-      setAsking(false);
     }
   };
 
@@ -255,7 +288,13 @@ const StudioPage = ({ user }) => {
         setProjectType(data.project_type);
       }
       if (data.messages?.length) {
-        setMessages(data.messages.map((m) => ({ role: m.role, text: m.text })));
+        setMessages(
+          data.messages.map((m) =>
+            m.role === "summary"
+              ? { role: "summary", did: m.did, suggestions: m.suggestions }
+              : { role: m.role, text: m.text }
+          )
+        );
       }
     } catch {}
   };
@@ -337,6 +376,7 @@ const StudioPage = ({ user }) => {
           messages={messages}
           working={working}
           asking={asking}
+          activeBot={activeBot}
           step={step}
           mode={mode}
           fullWidth={!previewOpen}
